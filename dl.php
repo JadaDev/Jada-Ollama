@@ -206,13 +206,49 @@ function handleRemoveModel() {
         exit;
     }
 
-    $cmd = "ollama rm " . escapeshellarg($model) . " 2>&1";
-    $output = shell_exec($cmd);
+    // Use Ollama API to remove model (same approach as other functions)
+    $deleteUrl = 'http://localhost:11434/api/delete';
+    $postData = json_encode(['name' => $model]);
+    
+    $ch = curl_init($deleteUrl);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, $postData);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, [
+        'Content-Type: application/json',
+        'Content-Length: ' . strlen($postData)
+    ]);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 10);
+    
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $error = curl_error($ch);
+    curl_close($ch);
 
-    if (strpos($output, 'error') !== false || strpos($output, 'Error') !== false || strpos($output, 'failed') !== false || strpos($output, 'not found') !== false) {
-        echo json_encode(['error' => trim($output)]);
+    if ($httpCode === 200) {
+        echo json_encode(['success' => true, 'message' => "Model '$model' removed successfully"]);
     } else {
-        echo json_encode(['success' => true, 'message' => "Model $model removed successfully", 'output' => trim($output)]);
+        $errorMessage = 'Failed to remove model';
+        if ($error) {
+            $errorMessage .= ': ' . $error;
+        } else {
+            $errorMessage .= ' (HTTP ' . $httpCode . ')';
+        }
+        
+        // If API method fails, fallback to command line for Windows
+        if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') {
+            $cmd = "ollama rm " . escapeshellarg($model) . " 2>&1";
+            $output = shell_exec($cmd);
+            
+            if ($output && (strpos($output, 'error') === false && strpos($output, 'Error') === false && strpos($output, 'failed') === false && strpos($output, 'not found') === false)) {
+                echo json_encode(['success' => true, 'message' => "Model '$model' removed successfully", 'method' => 'command']);
+            } else {
+                echo json_encode(['error' => $errorMessage . '. Command output: ' . trim($output)]);
+            }
+        } else {
+            echo json_encode(['error' => $errorMessage]);
+        }
     }
     exit;
 }
@@ -1403,28 +1439,19 @@ function showInterface() {
             transform: translateY(-1px);
         }
 
-        .available-model {
-            background: var(--bg-secondary);
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            padding: 20px;
-            margin-bottom: 20px;
-            transition: all 0.3s ease;
+        /* Model Grid Layout for Installed Models */
+        .model-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
         }
 
-        .available-model:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
-        }
-
-        .available-model.installed {
-            border-color: var(--success);
-            background: linear-gradient(135deg, var(--bg-secondary), rgba(56, 161, 105, 0.05));
-        }
-
-        .available-model.downloading {
-            border-color: var(--accent);
-            background: linear-gradient(135deg, var(--bg-secondary), rgba(0, 212, 170, 0.05));
+        @media (max-width: 768px) {
+            .model-grid {
+                grid-template-columns: 1fr;
+                gap: 16px;
+            }
         }
 
         .installed-model-card {
@@ -1432,90 +1459,130 @@ function showInterface() {
             border: 1px solid var(--border);
             border-radius: 12px;
             padding: 20px;
-            margin-bottom: 20px;
             transition: all 0.3s ease;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
         }
 
-        .model-header {
+        .installed-model-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+            border-color: var(--accent);
+        }
+
+        .installed-model-card .model-header {
             display: flex;
             justify-content: space-between;
             align-items: flex-start;
-            margin-bottom: 12px;
+            margin-bottom: 16px;
+            gap: 12px;
         }
 
-        .model-header h3 {
+        .installed-model-card .model-header h3 {
             margin: 0;
             color: var(--text-primary);
-            font-size: 1.2em;
+            font-size: 1.3em;
+            font-weight: 600;
+            line-height: 1.2;
+            flex: 1;
+            word-break: break-word;
         }
 
-        .model-size {
-            background: var(--bg-tertiary);
-            color: var(--text-secondary);
-            padding: 4px 8px;
-            border-radius: 12px;
-            font-size: 0.8em;
-            font-weight: 500;
-        }
-
-        .installed-badge {
-            background: var(--success);
+        .installed-model-card .model-size {
+            background: linear-gradient(135deg, var(--accent), var(--accent-hover));
             color: white;
-            padding: 4px 8px;
-            border-radius: 12px;
-            font-size: 0.75em;
-            font-weight: 500;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 0.8em;
+            font-weight: 600;
+            white-space: nowrap;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .installed-model-card .model-info {
             display: flex;
-            align-items: center;
-            gap: 4px;
-        }
-
-        .model-description {
-            color: var(--text-secondary);
-            line-height: 1.5;
-            margin-bottom: 12px;
-        }
-
-        .model-tags {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 6px;
-            margin-bottom: 16px;
-        }
-
-        .tag {
+            flex-direction: column;
+            gap: 10px;
+            margin-bottom: 20px;
+            padding: 12px;
             background: var(--bg-tertiary);
-            color: var(--text-secondary);
-            padding: 2px 8px;
-            border-radius: 12px;
-            font-size: 0.75em;
+            border-radius: 8px;
             border: 1px solid var(--border);
         }
 
-        .model-actions {
-            display: flex;
-            gap: 8px;
-            flex-wrap: wrap;
-        }
-
-        .model-info {
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-            margin-bottom: 16px;
-        }
-
-        .info-item {
+        .installed-model-card .info-item {
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: 10px;
             color: var(--text-secondary);
             font-size: 0.9em;
         }
 
-        .info-item i {
-            width: 16px;
+        .installed-model-card .info-item i {
+            width: 18px;
             color: var(--accent);
+            font-size: 0.9em;
+        }
+
+        .installed-model-card .model-actions {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .installed-model-card .btn {
+            flex: 1;
+            min-width: 140px;
+            justify-content: center;
+            padding: 10px 16px;
+            font-weight: 500;
+            border-radius: 8px;
+            transition: all 0.2s ease;
+        }
+
+        .installed-model-card .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        .installed-model-card .btn-primary {
+            background: linear-gradient(135deg, var(--accent), var(--accent-hover));
+            border: none;
+        }
+
+        .installed-model-card .btn-danger {
+            background: linear-gradient(135deg, var(--error), #dc2626);
+            border: none;
+        }
+
+        .installed-model-card .btn-danger:hover {
+            background: linear-gradient(135deg, #dc2626, #b91c1c);
+        }
+
+        /* Available Models Grid */
+        .available-models {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+            gap: 20px;
+        }
+
+        @media (max-width: 768px) {
+            .available-models {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .available-model {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 20px;
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .available-model:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
         }
 
         .search-filters {
