@@ -43,50 +43,43 @@ function formatBytes($bytes, $precision = 2) {
 
 function handleListModels() {
     header('Content-Type: application/json');
-    $cmd = "ollama list 2>&1";
-    $output = shell_exec($cmd);
+    
+    // Use API approach like the status check (same method as ollama_api.php)
+    $apiUrl = 'http://localhost:11434/api/tags';
+    $ch = curl_init($apiUrl);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 10);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $error = curl_error($ch);
+    curl_close($ch);
 
-    // Check for common errors indicating Ollama isn't running or command failed
-    if ($output === null || strpos($output, 'Error: ') !== false || strpos($output, 'connection refused') !== false || strpos($output, 'not recognized') !== false || strpos($output, 'command not found') !== false) {
-        $error_message = 'Ollama is not running or not accessible.';
-        if (strpos($output, 'connection refused') !== false) {
-            $error_message = 'Ollama connection refused. Is it running?';
-        } elseif (strpos($output, 'not recognized') !== false || strpos($output, 'command not found') !== false) {
-            $error_message = 'Ollama command not found. Is Ollama installed and in your PATH?';
-        } elseif ($output !== null && !empty(trim($output))) {
-            $error_message = 'Ollama command returned unexpected output: ' . trim($output);
+    if ($httpCode !== 200) {
+        $error_message = 'Ollama service is not running or not accessible.';
+        if ($error) {
+            $error_message .= ' Error: ' . $error;
+        } else {
+            $error_message .= ' HTTP ' . $httpCode;
         }
         echo json_encode(['error' => $error_message]);
         exit;
     }
 
-    $models = [];
-    $lines = explode("\n", trim($output));
-
-    if (count($lines) > 0 && strpos(trim($lines[0]), 'NAME') === 0) {
-        for ($i = 1; $i < count($lines); $i++) {
-            $line = trim($lines[$i]);
-            if (empty($line)) continue;
-
-            $parts = preg_split('/\s{2,}/', $line);
-
-            if (count($parts) >= 4) {
-                $name = trim($parts[0]);
-                $id = trim($parts[1]);
-                $size = trim($parts[2]);
-                $modified = trim($parts[3]);
-
-                $models[] = [
-                    'name' => $name,
-                    'id' => $id,
-                    'size' => $size,
-                    'modified' => $modified
-                ];
-            }
-        }
-    } else {
-        echo json_encode(['error' => 'Unexpected output format from ollama list. Output: ' . trim($output)]);
+    $data = json_decode($response, true);
+    if (!$data || !isset($data['models'])) {
+        echo json_encode(['error' => 'Invalid response from Ollama API']);
         exit;
+    }
+
+    $models = [];
+    foreach ($data['models'] as $model) {
+        $models[] = [
+            'name' => $model['name'],
+            'id' => substr($model['digest'], 0, 12) . '...',
+            'size' => formatBytes($model['size']),
+            'modified' => date('Y-m-d H:i:s', strtotime($model['modified_at']))
+        ];
     }
 
     echo json_encode(['models' => $models]);
@@ -227,30 +220,7 @@ function handleRemoveModel() {
 function handleCheckStatus() {
     header('Content-Type: application/json');
     
-    // Check if ollama command exists
-    $cmd = "where ollama 2>nul";
-    if (strtoupper(substr(PHP_OS, 0, 3)) !== 'WIN') {
-        $cmd = "which ollama 2>/dev/null";
-    }
-    
-    $ollamaPath = shell_exec($cmd);
-    
-    if (empty(trim($ollamaPath))) {
-        echo json_encode([
-            'running' => false,
-            'installed' => false,
-            'error' => 'Ollama is not installed or not in your system PATH.',
-            'instructions' => [
-                'Download and install Ollama from https://ollama.ai',
-                'Make sure Ollama is added to your system PATH',
-                'Restart your command prompt/terminal after installation',
-                'Run "ollama serve" to start the Ollama service'
-            ]
-        ]);
-        exit;
-    }
-    
-    // Check if Ollama service is running
+    // Check if Ollama service is running (same method as index.php)
     $apiUrl = 'http://localhost:11434/api/tags';
     $ch = curl_init($apiUrl);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
@@ -262,27 +232,41 @@ function handleCheckStatus() {
     curl_close($ch);
     
     if ($httpCode === 200) {
-        $cmd = "ollama --version 2>&1";
-        $output = shell_exec($cmd);
+        // Ollama is running - try to get version info
         $version = 'Unknown';
+        $ollamaPath = 'Unknown';
         
-        if (strpos($output, 'ollama version') !== false) {
+        // Try to get version (optional, don't fail if this doesn't work)
+        $cmd = "ollama --version 2>&1";
+        $output = @shell_exec($cmd);
+        if ($output && strpos($output, 'ollama version') !== false) {
             $version = trim(str_replace('ollama version', '', $output));
+        }
+        
+        // Try to get path (optional, don't fail if this doesn't work)
+        $pathCmd = "where ollama 2>nul";
+        if (strtoupper(substr(PHP_OS, 0, 3)) !== 'WIN') {
+            $pathCmd = "which ollama 2>/dev/null";
+        }
+        $pathOutput = @shell_exec($pathCmd);
+        if ($pathOutput && !empty(trim($pathOutput))) {
+            $ollamaPath = trim($pathOutput);
         }
         
         echo json_encode([
             'running' => true,
             'installed' => true,
             'version' => $version,
-            'path' => trim($ollamaPath)
+            'path' => $ollamaPath
         ]);
     } else {
+        // Ollama API is not accessible
         echo json_encode([
             'running' => false,
-            'installed' => true,
-            'error' => 'Ollama is installed but not running.',
-            'path' => trim($ollamaPath),
+            'installed' => false, // We can't determine if it's installed if API is not accessible
+            'error' => 'Ollama service is not running or not accessible.',
             'instructions' => [
+                'Make sure Ollama is installed from https://ollama.ai',
                 'Open a command prompt or terminal',
                 'Run the command: ollama serve',
                 'Keep the terminal open while using this interface',
