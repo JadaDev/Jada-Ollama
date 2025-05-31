@@ -391,54 +391,99 @@ function showInterface() {
         let ollamaRunning = false;
 
         const availableModels = [
-            {
-                name: "deepseek-r1",
-                description: "DeepSeek R1 - Advanced reasoning model with thinking capabilities",
-                size: "~1.5GB",
-                sizeCategory: "tiny",
-                tags: ["chat", "reasoning", "thinking", "deepseek"]
-            },
+            // Ultra-lightweight models (< 1GB)
             {
                 name: "tinyllama",
-                description: "TinyLlama - Ultra-lightweight model for basic tasks",
+                description: "TinyLlama - Ultra-lightweight model for basic tasks and testing",
                 size: "~637MB",
                 sizeCategory: "tiny",
-                tags: ["chat", "small", "fast", "basic"]
+                tags: ["chat", "small", "fast", "basic", "testing"]
             },
             {
                 name: "phi3:mini",
-                description: "Microsoft Phi-3 Mini - Extremely efficient small model",
-                size: "~1.2GB",
+                description: "Microsoft Phi-3 Mini - Extremely efficient 3.8B parameter model",
+                size: "~2.3GB",
                 sizeCategory: "tiny",
-                tags: ["chat", "small", "microsoft", "efficient"]
+                tags: ["chat", "small", "microsoft", "efficient", "reasoning"]
+            },
+            
+            // Small models (1-5GB)
+            {
+                name: "deepseek-r1:1.5b",
+                description: "DeepSeek R1 1.5B - Compact reasoning model with thinking capabilities",
+                size: "~1.5GB",
+                sizeCategory: "small",
+                tags: ["chat", "reasoning", "thinking", "deepseek", "small"]
+            },
+            {
+                name: "deepseek-r1:7b",
+                description: "DeepSeek R1 7B - Advanced reasoning model with thinking capabilities",
+                size: "~4.1GB",
+                sizeCategory: "small",
+                tags: ["chat", "reasoning", "thinking", "deepseek", "popular"]
             },
             {
                 name: "gemma2:2b",
-                description: "Google Gemma 2 2B - Compact but capable model",
+                description: "Google Gemma 2 2B - Compact but capable model from Google",
                 size: "~1.6GB",
-                sizeCategory: "tiny",
+                sizeCategory: "small",
                 tags: ["chat", "small", "google", "efficient"]
+            },
+            {
+                name: "qwen2.5:0.5b",
+                description: "Qwen 2.5 0.5B - Ultra-compact Chinese-English bilingual model",
+                size: "~394MB",
+                sizeCategory: "tiny",
+                tags: ["chat", "multilingual", "chinese", "tiny"]
+            },
+            {
+                name: "qwen2.5:1.5b",
+                description: "Qwen 2.5 1.5B - Small but powerful multilingual model",
+                size: "~934MB",
+                sizeCategory: "small",
+                tags: ["chat", "multilingual", "chinese", "small"]
+            },
+            {
+                name: "qwen2.5:3b",
+                description: "Qwen 2.5 3B - Balanced performance and efficiency",
+                size: "~1.9GB",
+                sizeCategory: "small",
+                tags: ["chat", "multilingual", "chinese", "balanced"]
+            },
+            {
+                name: "qwen2.5:7b",
+                description: "Qwen 2.5 7B - Strong multilingual capabilities",
+                size: "~4.4GB",
+                sizeCategory: "small",
+                tags: ["chat", "multilingual", "chinese", "powerful"]
             },
             {
                 name: "mistral",
                 description: "Mistral 7B - Fast and efficient general-purpose model",
                 size: "~4.1GB",
                 sizeCategory: "small",
-                tags: ["chat", "general", "fast", "small"]
+                tags: ["chat", "general", "fast", "popular"]
+            },
+            {
+                name: "llama3.2:1b",
+                description: "Meta Llama 3.2 1B - Compact version of latest Llama",
+                size: "~1.3GB",
+                sizeCategory: "small",
+                tags: ["chat", "meta", "latest", "small"]
+            },
+            {
+                name: "llama3.2:3b",
+                description: "Meta Llama 3.2 3B - Balanced performance and size",
+                size: "~2.0GB",
+                sizeCategory: "small",
+                tags: ["chat", "meta", "latest", "balanced"]
             },
             {
                 name: "llama3.2",
-                description: "Meta Llama 3.2 - Latest compact model with vision capabilities",
+                description: "Meta Llama 3.2 - Latest model with vision capabilities",
                 size: "~4.7GB",
                 sizeCategory: "small",
                 tags: ["chat", "vision", "meta", "latest", "multimodal"]
-            },
-            {
-                name: "codellama:7b",
-                description: "Code Llama 7B - Specialized for code generation and understanding",
-                size: "~3.8GB",
-                sizeCategory: "small",
-                tags: ["code", "programming", "small"]
             },
             {
                 name: "llama3:8b",
@@ -452,7 +497,95 @@ function showInterface() {
                 description: "Meta Llama 3.1 8B - Improved version with longer context",
                 size: "~4.7GB",
                 sizeCategory: "small",
-                tags: ["chat", "general", "meta", "latest"]
+                tags: ["chat", "general", "meta", "long-context"]
+            },
+            {
+                name: "gemma:7b",
+                description: "Google Gemma 7B - Open model from Google",
+                size: "~3.8GB",
+                sizeCategory: "small",
+                tags: ["chat", "google", "open-source"]
+            },
+            {
+                name: "gemma2:9b",
+                description: "Google Gemma 2 9B - Enhanced version with better performance",
+                size: "~5.4GB",
+                sizeCategory: "small",
+                tags: ["chat", "google", "enhanced"]
+            },
+            
+            // Code models
+            {
+                name: "codellama:7b",
+                description: "Code Llama 7B - Specialized for code generation and understanding",
+                size: "~3.8GB",
+                sizeCategory: "small",
+                tags: ["code", "programming", "meta", "development"]
+            },
+            {
+                name: "codellama:13b",
+                description: "Code Llama 13B - More capable code generation model",
+                size: "~7.3GB",
+                sizeCategory: "medium",
+                tags: ["code", "programming", "meta", "powerful"]
+            },
+            {
+                name: "codeqwen:7b",
+                description: "CodeQwen 7B - Code-focused version of Qwen",
+                size: "~4.2GB",
+                sizeCategory: "small",
+                tags: ["code", "programming", "multilingual"]
+            },
+            {
+                name: "deepseek-coder:6.7b",
+                description: "DeepSeek Coder 6.7B - Advanced coding assistant",
+                size: "~3.7GB",
+                sizeCategory: "small",
+                tags: ["code", "programming", "deepseek"]
+            },
+            {
+                name: "starcoder2:3b",
+                description: "StarCoder2 3B - Compact code generation model",
+                size: "~1.7GB",
+                sizeCategory: "small",
+                tags: ["code", "programming", "small"]
+            },
+            {
+                name: "starcoder2:7b",
+                description: "StarCoder2 7B - Powerful code generation model",
+                size: "~4.0GB",
+                sizeCategory: "small",
+                tags: ["code", "programming", "powerful"]
+            },
+            
+            // Medium models (5-15GB)
+            {
+                name: "llama3:70b",
+                description: "Meta Llama 3 70B - Large, highly capable model",
+                size: "~40GB",
+                sizeCategory: "large",
+                tags: ["chat", "large", "meta", "powerful"]
+            },
+            {
+                name: "llama3.1:70b",
+                description: "Meta Llama 3.1 70B - Enhanced large model with extended context",
+                size: "~40GB",
+                sizeCategory: "large",
+                tags: ["chat", "large", "meta", "long-context"]
+            },
+            {
+                name: "qwen2.5:14b",
+                description: "Qwen 2.5 14B - Medium-sized multilingual model",
+                size: "~8.7GB",
+                sizeCategory: "medium",
+                tags: ["chat", "multilingual", "chinese", "medium"]
+            },
+            {
+                name: "qwen2.5:32b",
+                description: "Qwen 2.5 32B - Large multilingual model",
+                size: "~19GB",
+                sizeCategory: "large",
+                tags: ["chat", "multilingual", "chinese", "large"]
             },
             {
                 name: "mixtral:8x7b",
@@ -460,6 +593,239 @@ function showInterface() {
                 size: "~26GB",
                 sizeCategory: "large",
                 tags: ["chat", "general", "mixture-of-experts", "large"]
+            },
+            {
+                name: "mixtral:8x22b",
+                description: "Mistral 8x22B MoE - Larger mixture of experts model",
+                size: "~87GB",
+                sizeCategory: "large",
+                tags: ["chat", "general", "mixture-of-experts", "huge"]
+            },
+            {
+                name: "command-r:35b",
+                description: "Cohere Command R 35B - Enterprise-grade conversational AI",
+                size: "~20GB",
+                sizeCategory: "large",
+                tags: ["chat", "enterprise", "cohere", "rag"]
+            },
+            {
+                name: "yi:34b",
+                description: "01.AI Yi 34B - Bilingual English-Chinese model",
+                size: "~19GB",
+                sizeCategory: "large",
+                tags: ["chat", "multilingual", "chinese", "large"]
+            },
+            {
+                name: "solar:10.7b",
+                description: "Solar 10.7B - Efficient mid-size model",
+                size: "~6.1GB",
+                sizeCategory: "medium",
+                tags: ["chat", "efficient", "medium"]
+            },
+            
+            // Specialized models
+            {
+                name: "nomic-embed-text",
+                description: "Nomic Embed Text - Text embedding model for semantic search",
+                size: "~274MB",
+                sizeCategory: "tiny",
+                tags: ["embedding", "search", "utility", "nomic"]
+            },
+            {
+                name: "mxbai-embed-large",
+                description: "MixedBread AI Embed Large - High-quality embedding model",
+                size: "~669MB",
+                sizeCategory: "tiny",
+                tags: ["embedding", "search", "utility"]
+            },
+            {
+                name: "llava:7b",
+                description: "LLaVA 7B - Large Language and Vision Assistant",
+                size: "~4.7GB",
+                sizeCategory: "small",
+                tags: ["vision", "multimodal", "images", "chat"]
+            },
+            {
+                name: "llava:13b",
+                description: "LLaVA 13B - Larger vision-language model",
+                size: "~7.3GB",
+                sizeCategory: "medium",
+                tags: ["vision", "multimodal", "images", "chat"]
+            },
+            {
+                name: "bakllava",
+                description: "BakLLaVA - Efficient vision-language model",
+                size: "~4.4GB",
+                sizeCategory: "small",
+                tags: ["vision", "multimodal", "images", "efficient"]
+            },
+            {
+                name: "dolphin-mistral",
+                description: "Dolphin Mistral - Uncensored and helpful assistant",
+                size: "~4.1GB",
+                sizeCategory: "small",
+                tags: ["chat", "uncensored", "helpful", "dolphin"]
+            },
+            {
+                name: "dolphin-llama3:8b",
+                description: "Dolphin Llama 3 8B - Uncensored Llama 3 variant",
+                size: "~4.7GB",
+                sizeCategory: "small",
+                tags: ["chat", "uncensored", "meta", "dolphin"]
+            },
+            {
+                name: "neural-chat",
+                description: "Neural Chat 7B - Fine-tuned for conversations",
+                size: "~4.1GB",
+                sizeCategory: "small",
+                tags: ["chat", "conversation", "intel"]
+            },
+            {
+                name: "orca-mini",
+                description: "Orca Mini 3B - Small but capable reasoning model",
+                size: "~1.9GB",
+                sizeCategory: "small",
+                tags: ["chat", "reasoning", "small", "microsoft"]
+            },
+            {
+                name: "vicuna:7b",
+                description: "Vicuna 7B - ChatGPT-like conversational model",
+                size: "~3.8GB",
+                sizeCategory: "small",
+                tags: ["chat", "conversation", "vicuna"]
+            },
+            {
+                name: "vicuna:13b",
+                description: "Vicuna 13B - Larger conversational model",
+                size: "~7.3GB",
+                sizeCategory: "medium",
+                tags: ["chat", "conversation", "vicuna"]
+            },
+            {
+                name: "wizardcoder:7b",
+                description: "WizardCoder 7B - Code generation specialist",
+                size: "~3.8GB",
+                sizeCategory: "small",
+                tags: ["code", "programming", "wizard"]
+            },
+            {
+                name: "wizardcoder:13b",
+                description: "WizardCoder 13B - More capable code generation",
+                size: "~7.3GB",
+                sizeCategory: "medium",
+                tags: ["code", "programming", "wizard"]
+            },
+            {
+                name: "openchat",
+                description: "OpenChat 7B - Open-source conversational AI",
+                size: "~3.8GB",
+                sizeCategory: "small",
+                tags: ["chat", "open-source", "conversation"]
+            },
+            {
+                name: "zephyr",
+                description: "Zephyr 7B - Helpful and harmless assistant",
+                size: "~4.1GB",
+                sizeCategory: "small",
+                tags: ["chat", "helpful", "assistant"]
+            },
+            {
+                name: "stablelm2",
+                description: "StableLM 2 1.6B - Efficient small language model",
+                size: "~1.6GB",
+                sizeCategory: "small",
+                tags: ["chat", "small", "stable", "efficient"]
+            },
+            {
+                name: "falcon:7b",
+                description: "Falcon 7B - High-performance language model",
+                size: "~3.8GB",
+                sizeCategory: "small",
+                tags: ["chat", "performance", "falcon"]
+            },
+            {
+                name: "nous-hermes2",
+                description: "Nous Hermes 2 - Fine-tuned for instruction following",
+                size: "~4.1GB",
+                sizeCategory: "small",
+                tags: ["chat", "instruction", "nous", "hermes"]
+            },
+            {
+                name: "sqlcoder:7b",
+                description: "SQLCoder 7B - Specialized for SQL generation",
+                size: "~3.8GB",
+                sizeCategory: "small",
+                tags: ["sql", "database", "code", "specialized"]
+            },
+            {
+                name: "magicoder:6.7b",
+                description: "MagiCoder 6.7B - Code generation with reasoning",
+                size: "~3.7GB",
+                sizeCategory: "small",
+                tags: ["code", "programming", "reasoning"]
+            },
+            {
+                name: "phind-codellama:34b",
+                description: "Phind CodeLlama 34B - Advanced code assistant",
+                size: "~19GB",
+                sizeCategory: "large",
+                tags: ["code", "programming", "large", "phind"]
+            },
+            {
+                name: "deepseek-llm:7b",
+                description: "DeepSeek LLM 7B - General purpose model from DeepSeek",
+                size: "~4.1GB",
+                sizeCategory: "small",
+                tags: ["chat", "general", "deepseek"]
+            },
+            {
+                name: "deepseek-llm:67b",
+                description: "DeepSeek LLM 67B - Large scale model from DeepSeek",
+                size: "~37GB",
+                sizeCategory: "large",
+                tags: ["chat", "large", "deepseek", "powerful"]
+            },
+            {
+                name: "aya:8b",
+                description: "Aya 8B - Multilingual model covering 101 languages",
+                size: "~4.8GB",
+                sizeCategory: "small",
+                tags: ["multilingual", "global", "cohere"]
+            },
+            {
+                name: "samantha-mistral",
+                description: "Samantha Mistral - Companion AI with personality",
+                size: "~4.1GB",
+                sizeCategory: "small",
+                tags: ["chat", "personality", "companion"]
+            },
+            {
+                name: "starling-lm:7b",
+                description: "Starling LM 7B - Reinforcement learning trained model",
+                size: "~4.1GB",
+                sizeCategory: "small",
+                tags: ["chat", "rlhf", "berkeley"]
+            },
+            {
+                name: "yarn-mistral:7b",
+                description: "Yarn Mistral 7B - Extended context length model",
+                size: "~4.1GB",
+                sizeCategory: "small",
+                tags: ["chat", "long-context", "extended"]
+            },
+            {
+                name: "medllama2:7b",
+                description: "MedLlama2 7B - Medical domain specialist",
+                size: "~3.8GB",
+                sizeCategory: "small",
+                tags: ["medical", "healthcare", "specialized"]
+            },
+            {
+                name: "meditron:7b",
+                description: "Meditron 7B - Medical AI assistant",
+                size: "~4.1GB",
+                sizeCategory: "small",
+                tags: ["medical", "healthcare", "assistant"]
             }
         ];
 
