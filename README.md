@@ -2,6 +2,12 @@
 
 <div align="center">
 
+[![Jada Ollama Video Demo](https://img.shields.io/badge/Watch%20Demo-YouTube-red?style=for-the-badge&logo=youtube)](https://youtu.be/VM-Fvworq4U)
+
+<a href="https://youtu.be/VM-Fvworq4U">
+  <img src="https://img.youtube.com/vi/VM-Fvworq4U/maxresdefault.jpg" width="600" alt="Jada Ollama Demo Video">
+</a>
+
 ![Jada Ollama Logo](ss-1-chat.png)
 
 **A Modern, Feature-Rich Web Interface for Ollama AI Models**
