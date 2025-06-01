@@ -18,29 +18,6 @@ let currentStreamingMessage = null; // Track current streaming message
 let streamingContent = ''; // Store streaming content
 let streamingThought = ''; // Store streaming thought content
 
-const defaultModels = [
-  { name: 'deepseek-r1', displayName: 'DeepSeek R1', size: '1.5B', gpuRam: '2GB' },
-  { name: 'mistral', displayName: 'Mistral', size: '7B', gpuRam: '8GB' },
-  { name: 'llama2', displayName: 'Llama 2', size: '7B', gpuRam: '8GB' },
-  { name: 'codellama', displayName: 'Code Llama', size: '7B', gpuRam: '8GB' },
-  { name: 'phi', displayName: 'Microsoft Phi-2', size: '2.7B', gpuRam: '4GB' },
-  { name: 'neural-chat', displayName: 'Neural Chat', size: '7B', gpuRam: '8GB' },
-  { name: 'starling-lm', displayName: 'Starling', size: '7B', gpuRam: '8GB' },
-  { name: 'openchat', displayName: 'OpenChat', size: '7B', gpuRam: '8GB' },
-  { name: 'tinyllama', displayName: 'Tiny Llama', size: '1.1B', gpuRam: '2GB' },
-  { name: 'stablelm-zephyr', displayName: 'Zephyr', size: '3B', gpuRam: '4GB' },
-  { name: 'dolphin-phi', displayName: 'Dolphin Phi', size: '2.7B', gpuRam: '4GB' },
-  { name: 'gemma', displayName: 'Google Gemma', size: '7B', gpuRam: '8GB' },
-  { name: 'qwen', displayName: 'Qwen', size: '7B', gpuRam: '8GB' },
-  { name: 'yi', displayName: 'Yi', size: '6B', gpuRam: '8GB' },
-  { name: 'orca-mini', displayName: 'Orca Mini', size: '3B', gpuRam: '4GB' },
-  { name: 'vicuna', displayName: 'Vicuna', size: '7B', gpuRam: '8GB' },
-  { name: 'wizard-math', displayName: 'WizardMath', size: '7B', gpuRam: '8GB' },
-  { name: 'meditron', displayName: 'Meditron', size: '7B', gpuRam: '8GB' },
-  { name: 'nous-hermes', displayName: 'Nous Hermes', size: '7B', gpuRam: '8GB' },
-  { name: 'solar', displayName: 'Solar', size: '7B', gpuRam: '8GB' }
-];
-
 (async () => {
   loadTheme();
   updateMemoryStatus();
@@ -121,16 +98,16 @@ async function checkStatus() {
     } else {
       dot.classList.remove('online');
       stat.textContent = 'Offline';
-      showOllamaNotFoundPopup();
+      // Redirect to dl.php instead of showing popup
+      window.location.href = 'dl.php';
     }
   } catch (error) {
     dot.classList.remove('online');
     stat.textContent = 'Connection Error';
-    showOllamaNotFoundPopup();
+    // Redirect to dl.php instead of showing popup
+    window.location.href = 'dl.php';
   }
 }
-
-let installedModels = []; // Track installed models
 
 async function loadModels() {
   try {
@@ -142,11 +119,9 @@ async function loadModels() {
       const defaultOption = new Option('Select a model to start chatting...', '');
       modelSel.add(defaultOption);
       
-      // Store installed models for reference
-      installedModels = data.models.map(m => m.name);
-      
       if (data.models.length === 0) {
-        showModelSelectionPopup();
+        // Redirect to dl.php instead of showing popup
+        window.location.href = 'dl.php';
       } else {
         data.models.forEach(model => {
           const option = new Option(`${model.name} (${model.size})`, model.name);
@@ -162,364 +137,13 @@ async function loadModels() {
       modelSel.disabled = false;
     } else {
       modelSel.innerHTML = '<option>Error loading models</option>';
-      showModelSelectionPopup();
+      // Redirect to dl.php instead of showing popup
+      window.location.href = 'dl.php';
     }
   } catch (error) {
     modelSel.innerHTML = '<option>Error loading models</option>';
-    showModelSelectionPopup();
-  }
-}
-
-function showOllamaNotFoundPopup() {
-  const popup = document.createElement('div');
-  popup.className = 'popup-overlay';
-  popup.innerHTML = `
-    <div class="popup-content">
-      <h2>⚠️ Ollama Not Detected</h2>
-      <p>It seems Ollama is not installed or running on your system. To use this chat interface:</p>
-      <ol>
-        <li>Download and install Ollama from <a href="https://ollama.ai" target="_blank">ollama.ai</a></li>
-        <li>Run Ollama on your system</li>
-        <li>Refresh this page</li>
-      </ol>
-      <button class="primary-btn" onclick="this.closest('.popup-overlay').remove()">Got it</button>
-    </div>
-  `;
-  document.body.appendChild(popup);
-}
-
-function showModelSelectionPopup() {
-  const popup = document.createElement('div');
-  popup.className = 'popup-overlay model-selection-popup';
-  
-  // Make the overlay clickable to close the popup
-  popup.addEventListener('click', (e) => {
-    // Only close if the actual overlay was clicked (not the content)
-    if (e.target === popup) {
-      popup.remove();
-    }
-  });
-  
-  popup.innerHTML = `
-    <div class="popup-content">
-      <h2>🤖 Model Library</h2>
-      <p class="model-library-desc">Discover and manage AI models for your conversations</p>
-      
-      ${installedModels.length === 0 ? `
-        <div class="quick-download">
-          <div class="quick-download-header">
-            <h3>⚡ Quick Start</h3>
-            <p>Get started with our recommended lightweight model</p>
-          </div>
-          <button class="primary-btn quick-start-btn" onclick="downloadModel('deepseek-r1')">
-            <i class="fas fa-download"></i>
-            Download DeepSeek R1 (1.5B) - Recommended
-          </button>
-        </div>
-      ` : ''}
-      
-      <div class="models-section">
-        <div class="section-header">
-          <h3>Available Models</h3>
-          <span class="model-count">${defaultModels.length} models available</span>
-        </div>
-        <div class="models-grid">
-          ${defaultModels.map(model => {
-            const isInstalled = installedModels.some(installed => installed.includes(model.name));
-            return `
-              <div class="model-card ${isInstalled ? 'installed' : ''}">
-                <div class="model-header">
-                  <h4>${model.displayName}</h4>
-                  ${isInstalled ? '<span class="installed-badge"><i class="fas fa-check-circle"></i> Installed</span>' : ''}
-                </div>
-                <div class="model-specs">
-                  <div class="spec-item">
-                    <i class="fas fa-microchip"></i>
-                    <span>Size: ${model.size}</span>
-                  </div>
-                  <div class="spec-item">
-                    <i class="fas fa-memory"></i>
-                    <span>GPU RAM: ${model.gpuRam}</span>
-                  </div>
-                </div>
-                <div class="model-actions">
-                  ${isInstalled ? 
-                    `<button class="chat-btn" onclick="selectAndCloseModel('${model.name}')">
-                      <i class="fas fa-comments"></i> Chat with ${model.displayName}
-                    </button>` :
-                    `<button class="downloadmdlbtn" onclick="downloadModel('${model.name}')">
-                      <i class="fas fa-download"></i> Download
-                    </button>`
-                  }
-                </div>
-              </div>
-            `;
-          }).join('')}
-        </div>
-      </div>
-      
-      <div class="popup-footer">
-        <button class="close-btn" id="close-model-popup">
-          <i class="fas fa-times"></i>
-        </button>
-      </div>
-    </div>
-  `;
-  document.body.appendChild(popup);
-  
-  // Add event listener for the close button
-  const closeBtn = popup.querySelector('#close-model-popup');
-  closeBtn.addEventListener('click', () => {
-    popup.remove();
-  });
-}
-
-function selectAndCloseModel(modelName) {
-  // Find the option that contains this model name
-  const options = Array.from(modelSel.options);
-  const matchingOption = options.find(option => 
-    option.value === modelName || option.textContent.includes(modelName)
-  );
-  
-  if (matchingOption) {
-    // Select the model using the actual option value
-    modelSel.value = matchingOption.value;
-    currentModel = matchingOption.value;
-    
-    // Trigger the change event to ensure all UI updates happen
-    const changeEvent = new Event('change', { bubbles: true });
-    modelSel.dispatchEvent(changeEvent);
-    
-    // Update UI elements
-    setChatEnabled(!!currentModel);
-    if (currentModel) {
-      inp.placeholder = `Chat with ${currentModel}...`;
-      inp.disabled = false;
-    }
-  }
-  
-  // Close the popup
-  const popup = document.querySelector('.model-selection-popup');
-  if (popup) {
-    popup.remove();
-  }
-}
-
-async function downloadModel(modelName) {
-  const modelInfo = defaultModels.find(m => m.name === modelName);
-  const downloadPopup = document.createElement('div');
-  downloadPopup.className = 'popup-overlay download-popup';
-  
-  // Make the overlay clickable to close the popup
-  downloadPopup.addEventListener('click', (e) => {
-    // Only close if the actual overlay was clicked (not the content)
-    if (e.target === downloadPopup) {
-      downloadPopup.remove();
-    }
-  });
-  
-  // Only show custom module input for new downloads, not for already defined models
-  const showCustomNameInput = !defaultModels.some(m => m.name === modelName);
-  
-  downloadPopup.innerHTML = `
-    <div class="popup-content download-dialog">
-      <div class="download-header">
-        <h2><i class="fas fa-cloud-download-alt"></i> Installing ${modelInfo?.displayName || modelName}</h2>
-        <p class="download-subtitle">This may take a few minutes depending on your internet connection</p>
-      </div>
-      
-      ${showCustomNameInput ? `
-      <!-- Custom Module Input Field -->
-      <div class="custom-module-input">
-        <label class="custom-module-label" for="custom-module-name">Custom Module Name (Optional)</label>
-        <input type="text" id="custom-module-name" class="custom-module-field" 
-               placeholder="Enter custom model name or leave empty to use default" 
-               value="${modelName}">
-        <p class="custom-module-hint">You can specify a different model name or repository URL</p>
-      </div>
-      ` : ''}
-      
-      <div class="download-progress-container">
-        <div class="download-status-card">
-          <div class="status-icon">
-            <i class="fas fa-download rotating"></i>
-          </div>
-          <div class="status-text">
-            <div class="status-title" id="download-status-title">Preparing download...</div>
-            <div class="status-detail" id="download-status-detail">Connecting to Ollama service</div>
-          </div>
-        </div>
-        
-        <div class="progress-bar-container">
-          <div class="progress-bar" id="download-progress-bar">
-            <div class="progress-fill" id="download-progress-fill"></div>
-          </div>
-          <div class="progress-text" id="download-progress-text">0%</div>
-        </div>
-        
-        <div class="download-log" id="download-log">
-          <div class="log-header">Download Log</div>
-          <div class="log-content" id="log-content">
-            <div class="log-entry">Starting download process...</div>
-          </div>
-        </div>
-      </div>
-      
-      <div class="download-actions">
-        <button class="secondary-btn" id="cancel-download" onclick="cancelDownload()">
-          <i class="fas fa-times"></i> Cancel
-        </button>
-      </div>
-      
-      <!-- Enhanced Close Button with Tooltip -->
-      <button class="close-btn" id="close-download-popup">
-        <i class="fas fa-times"></i>
-      </button>
-    </div>
-  `;
-  document.body.appendChild(downloadPopup);
-
-  // Add event listener for the close button
-  const closeBtn = downloadPopup.querySelector('#close-download-popup');
-  closeBtn.addEventListener('click', () => {
-    downloadPopup.remove();
-  });
-
-  try {
-    let downloadCancelled = false;
-    window.cancelDownload = () => {
-      downloadCancelled = true;
-      downloadPopup.remove();
-    };
-
-    // Get the custom module name when the download button is clicked
-    const customModuleInput = downloadPopup.querySelector('#custom-module-name');
-    const actualModelName = customModuleInput ? customModuleInput.value.trim() : modelName;
-
-    const response = await fetch('dl.php?action=download', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: actualModelName })
-    });
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    const statusTitle = downloadPopup.querySelector('#download-status-title');
-    const statusDetail = downloadPopup.querySelector('#download-status-detail');
-    const progressFill = downloadPopup.querySelector('#download-progress-fill');
-    const progressText = downloadPopup.querySelector('#download-progress-text');
-    const logContent = downloadPopup.querySelector('#log-content');
-    const statusIcon = downloadPopup.querySelector('.status-icon i');
-
-    let progress = 0;
-    let lastProgressUpdate = Date.now();
-
-    while (true) {
-      if (downloadCancelled) break;
-      
-      const { done, value } = await reader.read();
-      if (done) break;
-      
-      const text = decoder.decode(value).trim();
-      if (!text) continue;
-
-      // Add to log
-      const logEntry = document.createElement('div');
-      logEntry.className = 'log-entry';
-      logEntry.textContent = text;
-      logContent.appendChild(logEntry);
-      logContent.scrollTop = logContent.scrollHeight;
-
-      // Parse progress from output more reliably
-      // Check for different formats of progress reporting
-      let progressMatch = text.match(/(\d+)%\s*|(\d+\.\d+)\s*%/);
-      if (progressMatch) {
-        // Use the first matched group that contains a number
-        const matchedProgress = progressMatch[1] || progressMatch[2];
-        if (matchedProgress) {
-          progress = parseFloat(matchedProgress);
-          progressFill.style.width = `${progress}%`;
-          progressText.textContent = `${progress}%`;
-          lastProgressUpdate = Date.now();
-        }
-      } else if (text.includes('digesting')) {
-        // When in digesting phase, advance progress gradually
-        if (Date.now() - lastProgressUpdate > 1000) {  
-          progress = Math.min(progress + 0.5, 99); // Increment gradually but don't exceed 99%
-          progressFill.style.width = `${progress}%`;
-          progressText.textContent = `${progress}%`;
-        }
-      }
-
-      // Update status based on content
-      if (text.includes('pulling manifest')) {
-        statusTitle.textContent = 'Downloading manifest...';
-        statusDetail.textContent = 'Getting model information';
-      } else if (text.includes('pulling')) {
-        statusTitle.textContent = 'Downloading model files...';
-        statusDetail.textContent = 'This may take several minutes';
-      } else if (text.includes('verifying')) {
-        statusTitle.textContent = 'Verifying download...';
-        statusDetail.textContent = 'Ensuring file integrity';
-      } else if (text.includes('writing manifest')) {
-        statusTitle.textContent = 'Writing manifest...';
-        statusDetail.textContent = 'Finalizing installation';
-        progress = 95;
-        progressFill.style.width = '95%';
-        progressText.textContent = '95%';
-      } else if (text.includes('copying model files')) {
-        statusTitle.textContent = 'Installing model files...';
-        statusDetail.textContent = 'Almost done';
-        progress = 98;
-        progressFill.style.width = '98%'; 
-        progressText.textContent = '98%';
-      } else if (text.includes('Downloaded successfully') || text.includes('success')) {
-        statusTitle.textContent = 'Installation complete!';
-        statusDetail.textContent = `${modelInfo?.displayName || actualModelName} is ready to use`;
-        statusIcon.className = 'fas fa-check-circle';
-        statusIcon.classList.remove('rotating');
-        progressFill.style.width = '100%';
-        progressText.textContent = '100%';
-        
-        // Update download button to chat button
-        setTimeout(async () => {
-          await loadModels(); // Refresh model list
-          downloadPopup.innerHTML = `
-            <div class="popup-content download-success">
-              <div class="success-animation">
-                <i class="fas fa-check-circle"></i>
-              </div>
-              <h2>🎉 Installation Complete!</h2>
-              <p>${modelInfo?.displayName || actualModelName} has been successfully installed and is ready to use.</p>
-              <div class="success-actions">
-                <button class="primary-btn" onclick="selectAndCloseModel('${actualModelName}')">
-                  <i class="fas fa-comments"></i> Start Chatting
-                </button>
-                <button class="secondary-btn" onclick="this.closest('.popup-overlay').remove()">
-                  <i class="fas fa-times"></i> Close
-                </button>
-              </div>
-            </div>
-          `;
-        }, 2000);
-        break;
-      } else if (text.includes('error') || text.includes('Error')) {
-        statusTitle.textContent = 'Download failed';
-        statusDetail.textContent = 'Please check your connection and try again';
-        statusIcon.className = 'fas fa-exclamation-triangle';
-        statusIcon.classList.remove('rotating');
-        break;
-      }
-    }
-  } catch (error) {
-    const statusTitle = downloadPopup.querySelector('#download-status-title');
-    const statusDetail = downloadPopup.querySelector('#download-status-detail');
-    const statusIcon = downloadPopup.querySelector('.status-icon i');
-    
-    statusTitle.textContent = 'Download failed';
-    statusDetail.textContent = `Error: ${error.message}`;
-    statusIcon.className = 'fas fa-exclamation-triangle';
-    statusIcon.classList.remove('rotating');
+    // Redirect to dl.php instead of showing popup
+    window.location.href = 'dl.php';
   }
 }
 
