@@ -40,7 +40,7 @@ class Ollama {
                 'temperature' => 0.7,
                 'top_p' => 0.9,
                 'top_k' => 40,
-                'num_ctx' => 4096
+                'num_ctx' => 16384
             ]
         ];
         
@@ -77,7 +77,7 @@ class Ollama {
                 'temperature' => 0.7,
                 'top_p' => 0.9,
                 'top_k' => 40,
-                'num_ctx' => 4096
+                'num_ctx' => 16384
             ]
         ];
         
