@@ -87,6 +87,112 @@ overlay.addEventListener('click', () => {
   overlay.classList.remove('show');
 });
 
+function showOllamaDownloadPrompt() {
+  // Remove any existing prompt
+  const existingPrompt = document.getElementById('ollama-download-prompt');
+  if (existingPrompt) {
+    existingPrompt.remove();
+  }
+
+  // Create download prompt overlay
+  const promptOverlay = document.createElement('div');
+  promptOverlay.id = 'ollama-download-prompt';
+  promptOverlay.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.8);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 10000;
+  `;
+
+  const promptBox = document.createElement('div');
+  promptBox.style.cssText = `
+    background: var(--bg-primary, #1a1a1a);
+    border: 1px solid var(--border-color, #333);
+    border-radius: 12px;
+    padding: 30px;
+    max-width: 500px;
+    width: 90%;
+    text-align: center;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  `;
+
+  promptBox.innerHTML = `
+    <div style="margin-bottom: 20px;">
+      <i class="fas fa-exclamation-triangle" style="font-size: 48px; color: #ffa500; margin-bottom: 15px;"></i>
+      <h2 style="color: var(--text-primary, #fff); margin: 0 0 10px 0;">Ollama Not Found</h2>
+      <p style="color: var(--text-secondary, #ccc); margin: 0; line-height: 1.5;">
+        Ollama is required to use this chat application. Please download and install Ollama to continue.
+      </p>
+    </div>
+    <div style="display: flex; gap: 15px; justify-content: center;">
+      <button id="download-ollama-btn" style="
+        background: #007bff;
+        color: white;
+        border: none;
+        padding: 12px 24px;
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 16px;
+        font-weight: 600;
+        transition: background-color 0.3s;
+      ">
+        <i class="fas fa-download" style="margin-right: 8px;"></i>
+        Download Ollama
+      </button>
+      <button id="retry-connection-btn" style="
+        background: transparent;
+        color: var(--text-secondary, #ccc);
+        border: 1px solid var(--border-color, #333);
+        padding: 12px 24px;
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 16px;
+        transition: all 0.3s;
+      ">
+        <i class="fas fa-refresh" style="margin-right: 8px;"></i>
+        Retry
+      </button>
+    </div>
+  `;
+
+  // Add hover effects
+  const downloadBtn = promptBox.querySelector('#download-ollama-btn');
+  const retryBtn = promptBox.querySelector('#retry-connection-btn');
+
+  downloadBtn.addEventListener('mouseenter', () => {
+    downloadBtn.style.backgroundColor = '#0056b3';
+  });
+  downloadBtn.addEventListener('mouseleave', () => {
+    downloadBtn.style.backgroundColor = '#007bff';
+  });
+
+  retryBtn.addEventListener('mouseenter', () => {
+    retryBtn.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
+  });
+  retryBtn.addEventListener('mouseleave', () => {
+    retryBtn.style.backgroundColor = 'transparent';
+  });
+
+  // Add event listeners
+  downloadBtn.addEventListener('click', () => {
+    window.location.href = 'dl.php';
+  });
+
+  retryBtn.addEventListener('click', async () => {
+    promptOverlay.remove();
+    await checkStatus();
+  });
+
+  promptOverlay.appendChild(promptBox);
+  document.body.appendChild(promptOverlay);
+}
+
 async function checkStatus() {
   try {
     const response = await fetch('ollama_api.php?action=status');
@@ -94,18 +200,21 @@ async function checkStatus() {
     if (data.status === 'online') {
       dot.classList.add('online');
       stat.textContent = 'OLLAMA Online';
+      // Remove any existing download prompt if Ollama is now online
+      const existingPrompt = document.getElementById('ollama-download-prompt');
+      if (existingPrompt) {
+        existingPrompt.remove();
+      }
       await loadModels();
     } else {
       dot.classList.remove('online');
       stat.textContent = 'Offline';
-      // Redirect to dl.php instead of showing popup
-      window.location.href = 'dl.php';
+      showOllamaDownloadPrompt();
     }
   } catch (error) {
     dot.classList.remove('online');
     stat.textContent = 'Connection Error';
-    // Redirect to dl.php instead of showing popup
-    window.location.href = 'dl.php';
+    showOllamaDownloadPrompt();
   }
 }
 
@@ -120,8 +229,7 @@ async function loadModels() {
       modelSel.add(defaultOption);
       
       if (data.models.length === 0) {
-        // Redirect to dl.php instead of showing popup
-        window.location.href = 'dl.php';
+        showOllamaDownloadPrompt();
       } else {
         data.models.forEach(model => {
           const option = new Option(`${model.name} (${model.size})`, model.name);
@@ -137,13 +245,11 @@ async function loadModels() {
       modelSel.disabled = false;
     } else {
       modelSel.innerHTML = '<option>Error loading models</option>';
-      // Redirect to dl.php instead of showing popup
-      window.location.href = 'dl.php';
+      showOllamaDownloadPrompt();
     }
   } catch (error) {
     modelSel.innerHTML = '<option>Error loading models</option>';
-    // Redirect to dl.php instead of showing popup
-    window.location.href = 'dl.php';
+    showOllamaDownloadPrompt();
   }
 }
 
