@@ -87,16 +87,122 @@ overlay.addEventListener('click', () => {
   overlay.classList.remove('show');
 });
 
-function showOllamaDownloadPrompt() {
+function showConnectionErrorPrompt() {
   // Remove any existing prompt
-  const existingPrompt = document.getElementById('ollama-download-prompt');
+  const existingPrompt = document.getElementById('connection-error-prompt');
   if (existingPrompt) {
     existingPrompt.remove();
   }
 
-  // Create download prompt overlay
+  // Create connection error prompt overlay
   const promptOverlay = document.createElement('div');
-  promptOverlay.id = 'ollama-download-prompt';
+  promptOverlay.id = 'connection-error-prompt';
+  promptOverlay.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.8);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 10000;
+  `;
+
+  const promptBox = document.createElement('div');
+  promptBox.style.cssText = `
+    background: var(--bg-primary, #1a1a1a);
+    border: 1px solid var(--border-color, #333);
+    border-radius: 12px;
+    padding: 30px;
+    max-width: 500px;
+    width: 90%;
+    text-align: center;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  `;
+
+  promptBox.innerHTML = `
+    <div style="margin-bottom: 20px;">
+      <i class="fas fa-wifi" style="font-size: 48px; color: #dc3545; margin-bottom: 15px;"></i>
+      <h2 style="color: var(--text-primary, #fff); margin: 0 0 10px 0;">Connection Error</h2>
+      <p style="color: var(--text-secondary, #ccc); margin: 0; line-height: 1.5;">
+        Unable to connect to Ollama. This could be a temporary network issue or Ollama might have stopped running.
+      </p>
+    </div>
+    <div style="display: flex; gap: 15px; justify-content: center;">
+      <button id="retry-connection-btn" style="
+        background: #28a745;
+        color: white;
+        border: none;
+        padding: 12px 24px;
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 16px;
+        font-weight: 600;
+        transition: background-color 0.3s;
+      ">
+        <i class="fas fa-refresh" style="margin-right: 8px;"></i>
+        Retry Connection
+      </button>
+      <button id="download-ollama-btn" style="
+        background: transparent;
+        color: var(--text-secondary, #ccc);
+        border: 1px solid var(--border-color, #333);
+        padding: 12px 24px;
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 16px;
+        transition: all 0.3s;
+      ">
+        <i class="fas fa-download" style="margin-right: 8px;"></i>
+        Download Ollama
+      </button>
+    </div>
+  `;
+
+  // Add hover effects
+  const retryBtn = promptBox.querySelector('#retry-connection-btn');
+  const downloadBtn = promptBox.querySelector('#download-ollama-btn');
+
+  retryBtn.addEventListener('mouseenter', () => {
+    retryBtn.style.backgroundColor = '#218838';
+  });
+  retryBtn.addEventListener('mouseleave', () => {
+    retryBtn.style.backgroundColor = '#28a745';
+  });
+
+  downloadBtn.addEventListener('mouseenter', () => {
+    downloadBtn.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
+  });
+  downloadBtn.addEventListener('mouseleave', () => {
+    downloadBtn.style.backgroundColor = 'transparent';
+  });
+
+  // Add event listeners
+  retryBtn.addEventListener('click', async () => {
+    promptOverlay.remove();
+    await checkStatus();
+  });
+
+  downloadBtn.addEventListener('click', () => {
+    window.location.href = 'dl.php';
+  });
+
+  promptOverlay.appendChild(promptBox);
+  document.body.appendChild(promptOverlay);
+}
+
+function showOllamaNotFoundPrompt() {
+  // Remove any existing prompt
+  const existingPrompt = document.getElementById('ollama-not-found-prompt');
+  if (existingPrompt) {
+    existingPrompt.remove();
+  }
+
+  // Create Ollama not found prompt overlay
+  const promptOverlay = document.createElement('div');
+  promptOverlay.id = 'ollama-not-found-prompt';
   promptOverlay.style.cssText = `
     position: fixed;
     top: 0;
@@ -127,7 +233,7 @@ function showOllamaDownloadPrompt() {
       <i class="fas fa-exclamation-triangle" style="font-size: 48px; color: #ffa500; margin-bottom: 15px;"></i>
       <h2 style="color: var(--text-primary, #fff); margin: 0 0 10px 0;">Ollama Not Found</h2>
       <p style="color: var(--text-secondary, #ccc); margin: 0; line-height: 1.5;">
-        Ollama is required to use this chat application. Please download and install Ollama to continue.
+        Ollama is not running or not installed. Please download and install Ollama to use this chat application.
       </p>
     </div>
     <div style="display: flex; gap: 15px; justify-content: center;">
@@ -200,21 +306,27 @@ async function checkStatus() {
     if (data.status === 'online') {
       dot.classList.add('online');
       stat.textContent = 'OLLAMA Online';
-      // Remove any existing download prompt if Ollama is now online
-      const existingPrompt = document.getElementById('ollama-download-prompt');
-      if (existingPrompt) {
-        existingPrompt.remove();
+      // Remove any existing prompts if Ollama is now online
+      const existingConnectionPrompt = document.getElementById('connection-error-prompt');
+      const existingNotFoundPrompt = document.getElementById('ollama-not-found-prompt');
+      if (existingConnectionPrompt) {
+        existingConnectionPrompt.remove();
+      }
+      if (existingNotFoundPrompt) {
+        existingNotFoundPrompt.remove();
       }
       await loadModels();
     } else {
       dot.classList.remove('online');
       stat.textContent = 'Offline';
-      showOllamaDownloadPrompt();
+      // Ollama is not running - show not found prompt
+      showOllamaNotFoundPrompt();
     }
   } catch (error) {
     dot.classList.remove('online');
     stat.textContent = 'Connection Error';
-    showOllamaDownloadPrompt();
+    // Connection error - show connection error prompt with retry option
+    showConnectionErrorPrompt();
   }
 }
 
@@ -229,7 +341,9 @@ async function loadModels() {
       modelSel.add(defaultOption);
       
       if (data.models.length === 0) {
-        showOllamaDownloadPrompt();
+        // No models available - this might mean Ollama is installed but no models are downloaded
+        // Show the not found prompt which gives option to go to download page
+        showOllamaNotFoundPrompt();
       } else {
         data.models.forEach(model => {
           const option = new Option(`${model.name} (${model.size})`, model.name);
@@ -245,11 +359,13 @@ async function loadModels() {
       modelSel.disabled = false;
     } else {
       modelSel.innerHTML = '<option>Error loading models</option>';
-      showOllamaDownloadPrompt();
+      // Error loading models - show connection error prompt
+      showConnectionErrorPrompt();
     }
   } catch (error) {
     modelSel.innerHTML = '<option>Error loading models</option>';
-    showOllamaDownloadPrompt();
+    // Connection error while loading models - show connection error prompt
+    showConnectionErrorPrompt();
   }
 }
 
