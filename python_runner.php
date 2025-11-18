@@ -24,7 +24,6 @@ if (!$code) {
   exit;
 }
 
-// Removed dangerous patterns check to allow all code execution
 
 function executeCode($code, $language) {
   $timeout = 5;
