@@ -4,6 +4,9 @@ const stat = document.getElementById('statustext');
 const msgs = document.getElementById('msgs');
 const inp = document.getElementById('inp');
 const btn = document.getElementById('btn');
+const stopBtn = document.getElementById('stopBtn');
+const continueBtn = document.getElementById('continueBtn');
+const scrollToBottomBtn = document.getElementById('scrollToBottom');
 const sidebar = document.getElementById('sidebar');
 const overlay = document.getElementById('overlay');
 const themeIcon = document.getElementById('themeIcon');
@@ -17,23 +20,218 @@ let currentChatId = null;
 let currentStreamingMessage = null; // Track current streaming message
 let streamingContent = ''; // Store streaming content
 let streamingThought = ''; // Store streaming thought content
-
+let streamReader = null; // Store current stream reader for stopping
+let abortController = null; // Store abort controller for cancelling fetch
+let isStreamStopped = false; // Track if user stopped the stream
+let autoScroll = true; // Auto-scroll behavior
+let availableModels = []; // Store available models for modal
+function generateChatId() {
+  const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+  let id = '';
+  for (let i = 0; i < 32; i++) {
+    id += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return id;
+}
+function getChatIdFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  return params.get('chat');
+}
+function setChatIdInUrl(chatId) {
+  const url = new URL(window.location);
+  if (chatId) {
+    url.searchParams.set('chat', chatId);
+  } else {
+    url.searchParams.delete('chat');
+  }
+  window.history.pushState({}, '', url);
+}
+function showModal(title, message, type = 'question', confirmText = 'Confirm', cancelText = 'Cancel') {
+  return new Promise((resolve) => {
+    const modal = document.getElementById('customModal');
+    const modalTitle = document.getElementById('modalTitle');
+    const modalMessage = document.getElementById('modalMessage');
+    const modalIcon = document.getElementById('modalIcon');
+    const modalConfirm = document.getElementById('modalConfirm');
+    const modalCancel = document.getElementById('modalCancel');
+    const modalContent = modal.querySelector('.modal-content');
+    modalTitle.textContent = title;
+    modalMessage.textContent = message;
+    modalConfirm.textContent = confirmText;
+    modalCancel.textContent = cancelText;
+    const iconMap = {
+      'question': 'fa-question-circle',
+      'warning': 'fa-exclamation-triangle',
+      'error': 'fa-exclamation-circle',
+      'success': 'fa-check-circle',
+      'info': 'fa-info-circle'
+    };
+    modalIcon.className = `fas ${iconMap[type] || iconMap.question}`;
+    modalContent.classList.remove('modal-icon-warning', 'modal-icon-error', 'modal-icon-success', 'modal-icon-info');
+    if (type !== 'question') {
+      modalContent.classList.add(`modal-icon-${type}`);
+    }
+    modal.classList.add('show');
+    const handleConfirm = () => {
+      modal.classList.remove('show');
+      cleanup();
+      resolve(true);
+    };
+    const handleCancel = () => {
+      modal.classList.remove('show');
+      cleanup();
+      resolve(false);
+    };
+    const cleanup = () => {
+      modalConfirm.removeEventListener('click', handleConfirm);
+      modalCancel.removeEventListener('click', handleCancel);
+    };
+    modalConfirm.addEventListener('click', handleConfirm);
+    modalCancel.addEventListener('click', handleCancel);
+  });
+}
+function showAlert(title, message, type = 'info') {
+  return new Promise((resolve) => {
+    const modal = document.getElementById('customModal');
+    const modalTitle = document.getElementById('modalTitle');
+    const modalMessage = document.getElementById('modalMessage');
+    const modalIcon = document.getElementById('modalIcon');
+    const modalConfirm = document.getElementById('modalConfirm');
+    const modalCancel = document.getElementById('modalCancel');
+    const modalContent = modal.querySelector('.modal-content');
+    modalTitle.textContent = title;
+    modalMessage.textContent = message;
+    modalConfirm.textContent = 'OK';
+    modalCancel.style.display = 'none'; // Hide cancel button for alerts
+    const iconMap = {
+      'warning': 'fa-exclamation-triangle',
+      'error': 'fa-exclamation-circle',
+      'success': 'fa-check-circle',
+      'info': 'fa-info-circle'
+    };
+    modalIcon.className = `fas ${iconMap[type] || iconMap.info}`;
+    modalContent.classList.remove('modal-icon-warning', 'modal-icon-error', 'modal-icon-success', 'modal-icon-info');
+    modalContent.classList.add(`modal-icon-${type}`);
+    modal.classList.add('show');
+    const handleConfirm = () => {
+      modal.classList.remove('show');
+      modalCancel.style.display = ''; // Reset cancel button
+      cleanup();
+      resolve(true);
+    };
+    const cleanup = () => {
+      modalConfirm.removeEventListener('click', handleConfirm);
+    };
+    modalConfirm.addEventListener('click', handleConfirm);
+  });
+}
+function showModelSelectionModal() {
+  return new Promise((resolve) => {
+    const modal = document.getElementById('modelSelectionModal');
+    const modelList = document.getElementById('modelSelectionList');
+    const cancelBtn = document.getElementById('modelSelectionCancel');
+    modelList.innerHTML = '';
+    if (availableModels.length === 0) {
+      modelList.innerHTML = `
+        <div style="text-align: center; padding: 20px; color: var(--text-secondary);">
+          <i class="fas fa-inbox" style="font-size: 48px; margin-bottom: 12px; opacity: 0.5;"></i>
+          <p>No models available. Download models to get started!</p>
+        </div>
+      `;
+    } else {
+      availableModels.forEach(model => {
+        const item = document.createElement('div');
+        item.className = 'model-selection-item';
+        item.innerHTML = `
+          <i class="fas fa-brain"></i>
+          <div class="model-selection-info">
+            <div class="model-selection-name">${model.name}</div>
+            <div class="model-selection-size">${model.size}</div>
+          </div>
+          <i class="fas fa-chevron-right" style="color: var(--text-muted); font-size: 16px;"></i>
+        `;
+        item.addEventListener('click', () => {
+          modal.classList.remove('show');
+          cleanup();
+          resolve(model.name);
+        });
+        modelList.appendChild(item);
+      });
+    }
+    modal.classList.add('show');
+    const handleCancel = () => {
+      modal.classList.remove('show');
+      cleanup();
+      resolve(null);
+    };
+    const cleanup = () => {
+      cancelBtn.removeEventListener('click', handleCancel);
+    };
+    cancelBtn.addEventListener('click', handleCancel);
+  });
+}
+function initAutoScroll() {
+  msgs.addEventListener('scroll', () => {
+    const distanceFromBottom = msgs.scrollHeight - msgs.scrollTop - msgs.clientHeight;
+    const isNearBottom = distanceFromBottom < 50;
+    const isAtAbsoluteBottom = distanceFromBottom <= 1; // Must be at the very bottom
+    if (!isNearBottom) {
+      autoScroll = false;
+    }
+    if (isAtAbsoluteBottom) {
+      autoScroll = true;
+    }
+    if (isNearBottom) {
+      scrollToBottomBtn.classList.remove('show');
+    } else {
+      scrollToBottomBtn.classList.add('show');
+    }
+  });
+  scrollToBottomBtn.addEventListener('click', () => {
+    scrollToBottom();
+    autoScroll = true;
+  });
+}
+function scrollToBottom() {
+  msgs.scrollTo({
+    top: msgs.scrollHeight,
+    behavior: 'smooth'
+  });
+}
+function scrollToBottomIfNeeded() {
+  if (autoScroll) {
+    msgs.scrollTop = msgs.scrollHeight;
+  }
+}
 (async () => {
   loadTheme();
   updateMemoryStatus();
+  initAutoScroll();
   await checkStatus();
   await loadModels();
   loadChatHistory();
   setupInputHandlers();
   setInterval(checkStatus, 30000);
+  const urlParams = new URLSearchParams(window.location.search);
+  const modelParam = urlParams.get('model');
+  if (modelParam) {
+    setTimeout(() => {
+      const decodedModel = decodeURIComponent(modelParam);
+      modelSel.value = decodedModel;
+      if (modelSel.value === decodedModel) {
+        currentModel = decodedModel;
+        setChatEnabled(true);
+        inp.placeholder = `Chat with ${currentModel}...`;
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
+    }, 500);
+  }
 })();
-
 function toggleMemory() {
   memoryEnabled = !memoryEnabled;
   localStorage.setItem('ollama_memory_enabled', memoryEnabled);
   updateMemoryStatus();
 }
-
 function updateMemoryStatus() {
   memoryStatus.textContent = memoryEnabled ? 'ON' : 'OFF';
   const memoryBtn = document.getElementById('memoryBtn');
@@ -43,22 +241,84 @@ function updateMemoryStatus() {
     memoryBtn.classList.remove('active');
   }
 }
-
 function setupInputHandlers() {
   inp.addEventListener('input', function() {
     this.style.height = 'auto';
     this.style.height = Math.min(this.scrollHeight, 200) + 'px';
-    setChatEnabled(!!currentModel);
+    const hasText = inp.value.trim().length > 0;
+    btn.disabled = !currentModel || !hasText || isTyping;
   });
-  inp.addEventListener('keydown', function(e) {
+  inp.addEventListener('keydown', async function(e) {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      btn.click();
+      console.log('[UI] Enter pressed, currentModel:', currentModel, 'text:', inp.value.trim().substring(0, 20));
+      if (!currentModel && inp.value.trim()) {
+        console.log('[UI] No model selected, showing modal');
+        const selectedModel = await showModelSelectionModal();
+        if (selectedModel) {
+          modelSel.value = selectedModel;
+          currentModel = selectedModel;
+          inp.placeholder = `Chat with ${currentModel}...`;
+          btn.disabled = false;
+          console.log('[UI] Model selected from modal, triggering send');
+          sendMessage();
+        }
+      } else if (currentModel && inp.value.trim()) {
+        console.log('[UI] Model exists and has text, triggering send');
+        sendMessage();
+      } else {
+        console.log('[UI] Cannot send - model:', !!currentModel, 'hasText:', !!inp.value.trim());
+      }
     }
   });
-  btn.addEventListener('click', sendMessage);
+  btn.addEventListener('click', () => {
+    console.log('[UI] Send button clicked');
+    sendMessage();
+  });
+  stopBtn.addEventListener('click', stopGeneration);
+  continueBtn.addEventListener('click', continueGeneration);
 }
-
+function stopGeneration() {
+  console.log('[Stop] Stop button clicked, streamReader:', !!streamReader, 'isTyping:', isTyping);
+  isStreamStopped = true;
+  if (abortController) {
+    try {
+      abortController.abort();
+      console.log('[Stop] Fetch request aborted');
+    } catch (error) {
+      console.error('[Stop] Error aborting fetch:', error);
+    }
+    abortController = null;
+  }
+  if (streamReader) {
+    try {
+      streamReader.cancel();
+      console.log('[Stop] Stream cancelled successfully');
+    } catch (error) {
+      console.error('[Stop] Error cancelling stream:', error);
+    }
+    streamReader = null;
+  }
+  if (currentStreamingMessage) {
+    finishStreamingMessage();
+  }
+  stopBtn.style.display = 'none';
+  continueBtn.style.display = 'flex';
+  btn.style.display = 'flex';
+  isTyping = false;
+  console.log('[Stop] UI updated, continue button shown');
+}
+async function continueGeneration() {
+  console.log('[Continue] Continue button clicked, currentModel:', currentModel, 'isTyping:', isTyping);
+  if (!currentModel || isTyping) {
+    console.warn('[Continue] Cannot continue - no model or already typing');
+    return;
+  }
+  continueBtn.style.display = 'none';
+  isStreamStopped = false;
+  console.log('[Continue] Calling sendMessage(true)');
+  sendMessage(true);
+}
 function toggleTheme() {
   const currentTheme = document.documentElement.getAttribute('data-theme');
   const newTheme = currentTheme === 'light' ? 'dark' : 'light';
@@ -70,31 +330,24 @@ function toggleTheme() {
     ? 'https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism.min.css'
     : 'https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css';
 }
-
 function loadTheme() {
   const savedTheme = localStorage.getItem('ollama_theme') || 'dark';
   document.documentElement.setAttribute('data-theme', savedTheme);
   themeIcon.className = savedTheme === 'light' ? 'fas fa-sun' : 'fas fa-moon';
 }
-
 function toggleSidebar() {
   sidebar.classList.toggle('open');
   overlay.classList.toggle('show');
 }
-
 overlay.addEventListener('click', () => {
   sidebar.classList.remove('open');
   overlay.classList.remove('show');
 });
-
 function showConnectionErrorPrompt() {
-  // Remove any existing prompt
   const existingPrompt = document.getElementById('connection-error-prompt');
   if (existingPrompt) {
     existingPrompt.remove();
   }
-
-  // Create connection error prompt overlay
   const promptOverlay = document.createElement('div');
   promptOverlay.id = 'connection-error-prompt';
   promptOverlay.style.cssText = `
@@ -109,7 +362,6 @@ function showConnectionErrorPrompt() {
     align-items: center;
     z-index: 10000;
   `;
-
   const promptBox = document.createElement('div');
   promptBox.style.cssText = `
     background: var(--bg-primary, #1a1a1a);
@@ -121,7 +373,6 @@ function showConnectionErrorPrompt() {
     text-align: center;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
   `;
-
   promptBox.innerHTML = `
     <div style="margin-bottom: 20px;">
       <i class="fas fa-wifi" style="font-size: 48px; color: #dc3545; margin-bottom: 15px;"></i>
@@ -160,47 +411,35 @@ function showConnectionErrorPrompt() {
       </button>
     </div>
   `;
-
-  // Add hover effects
   const retryBtn = promptBox.querySelector('#retry-connection-btn');
   const downloadBtn = promptBox.querySelector('#download-ollama-btn');
-
   retryBtn.addEventListener('mouseenter', () => {
     retryBtn.style.backgroundColor = '#218838';
   });
   retryBtn.addEventListener('mouseleave', () => {
     retryBtn.style.backgroundColor = '#28a745';
   });
-
   downloadBtn.addEventListener('mouseenter', () => {
     downloadBtn.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
   });
   downloadBtn.addEventListener('mouseleave', () => {
     downloadBtn.style.backgroundColor = 'transparent';
   });
-
-  // Add event listeners
   retryBtn.addEventListener('click', async () => {
     promptOverlay.remove();
     await checkStatus();
   });
-
   downloadBtn.addEventListener('click', () => {
-    window.location.href = 'dl.php';
+    window.location.href = 'dl';
   });
-
   promptOverlay.appendChild(promptBox);
   document.body.appendChild(promptOverlay);
 }
-
 function showOllamaNotFoundPrompt() {
-  // Remove any existing prompt
   const existingPrompt = document.getElementById('ollama-not-found-prompt');
   if (existingPrompt) {
     existingPrompt.remove();
   }
-
-  // Create Ollama not found prompt overlay
   const promptOverlay = document.createElement('div');
   promptOverlay.id = 'ollama-not-found-prompt';
   promptOverlay.style.cssText = `
@@ -215,7 +454,6 @@ function showOllamaNotFoundPrompt() {
     align-items: center;
     z-index: 10000;
   `;
-
   const promptBox = document.createElement('div');
   promptBox.style.cssText = `
     background: var(--bg-primary, #1a1a1a);
@@ -227,7 +465,6 @@ function showOllamaNotFoundPrompt() {
     text-align: center;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
   `;
-
   promptBox.innerHTML = `
     <div style="margin-bottom: 20px;">
       <i class="fas fa-exclamation-triangle" style="font-size: 48px; color: #ffa500; margin-bottom: 15px;"></i>
@@ -266,47 +503,146 @@ function showOllamaNotFoundPrompt() {
       </button>
     </div>
   `;
-
-  // Add hover effects
   const downloadBtn = promptBox.querySelector('#download-ollama-btn');
   const retryBtn = promptBox.querySelector('#retry-connection-btn');
-
   downloadBtn.addEventListener('mouseenter', () => {
     downloadBtn.style.backgroundColor = '#0056b3';
   });
   downloadBtn.addEventListener('mouseleave', () => {
     downloadBtn.style.backgroundColor = '#007bff';
   });
-
   retryBtn.addEventListener('mouseenter', () => {
     retryBtn.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
   });
   retryBtn.addEventListener('mouseleave', () => {
     retryBtn.style.backgroundColor = 'transparent';
   });
-
-  // Add event listeners
   downloadBtn.addEventListener('click', () => {
-    window.location.href = 'dl.php';
+    window.location.href = 'dl';
   });
-
   retryBtn.addEventListener('click', async () => {
     promptOverlay.remove();
     await checkStatus();
   });
-
   promptOverlay.appendChild(promptBox);
   document.body.appendChild(promptOverlay);
 }
-
-async function checkStatus() {
+function showServerErrorPrompt() {
+  const existingPrompt = document.getElementById('server-error-prompt');
+  if (existingPrompt) {
+    existingPrompt.remove();
+  }
+  const promptOverlay = document.createElement('div');
+  promptOverlay.id = 'server-error-prompt';
+  promptOverlay.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.8);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 10000;
+  `;
+  const promptBox = document.createElement('div');
+  promptBox.style.cssText = `
+    background: var(--bg-primary, #1a1a1a);
+    border: 1px solid var(--border-color, #333);
+    border-radius: 12px;
+    padding: 30px;
+    max-width: 500px;
+    width: 90%;
+    text-align: center;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  `;
+  promptBox.innerHTML = `
+    <div style="margin-bottom: 20px;">
+      <i class="fas fa-server" style="font-size: 48px; color: #dc3545; margin-bottom: 15px;"></i>
+      <h2 style="color: var(--text-primary, #fff); margin: 0 0 10px 0;">Server Error</h2>
+      <p style="color: var(--text-secondary, #ccc); margin: 0; line-height: 1.5;">
+        There was an internal server error. Please check the server logs and try again later.
+      </p>
+    </div>
+    <div style="display: flex; gap: 15px; justify-content: center;">
+      <button id="reload-page-btn" style="
+        background: #28a745;
+        color: white;
+        border: none;
+        padding: 12px 24px;
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 16px;
+        font-weight: 600;
+        transition: background-color 0.3s;
+      ">
+        <i class="fas fa-refresh" style="margin-right: 8px;"></i>
+        Reload Page
+      </button>
+      <button id="dismiss-error-btn" style="
+        background: transparent;
+        color: var(--text-secondary, #ccc);
+        border: 1px solid var(--border-color, #333);
+        padding: 12px 24px;
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 16px;
+        transition: all 0.3s;
+      ">
+        <i class="fas fa-times" style="margin-right: 8px;"></i>
+        Dismiss
+      </button>
+    </div>
+  `;
+  const reloadBtn = promptBox.querySelector('#reload-page-btn');
+  const dismissBtn = promptBox.querySelector('#dismiss-error-btn');
+  reloadBtn.addEventListener('mouseenter', () => {
+    reloadBtn.style.backgroundColor = '#218838';
+  });
+  reloadBtn.addEventListener('mouseleave', () => {
+    reloadBtn.style.backgroundColor = '#28a745';
+  });
+  dismissBtn.addEventListener('mouseenter', () => {
+    dismissBtn.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
+  });
+  dismissBtn.addEventListener('mouseleave', () => {
+    dismissBtn.style.backgroundColor = 'transparent';
+  });
+  reloadBtn.addEventListener('click', () => {
+    window.location.reload();
+  });
+  dismissBtn.addEventListener('click', () => {
+    promptOverlay.remove();
+  });
+  promptOverlay.appendChild(promptBox);
+  document.body.appendChild(promptOverlay);
+}
+async function checkStatus(retryCount = 0) {
+  const maxRetries = 3;
+  const retryDelay = 2000; // 2 seconds
   try {
-    const response = await fetch('ollama_api.php?action=status');
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+    const response = await fetch('ollama_api.php?action=status', {
+      signal: controller.signal,
+      headers: {
+        'Cache-Control': 'no-cache',
+        'Pragma': 'no-cache'
+      }
+    });
+    clearTimeout(timeoutId);
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
     const data = await response.json();
-    if (data.status === 'online') {
+    if (data && data.success === false) {
+      throw new Error(data.error || 'API returned error status');
+    }
+    const statusStr = (data && data.status) || (data && data.data && data.data.status) || null;
+    if (statusStr && statusStr.toLowerCase() === 'online') {
       dot.classList.add('online');
       stat.textContent = 'OLLAMA Online';
-      // Remove any existing prompts if Ollama is now online
       const existingConnectionPrompt = document.getElementById('connection-error-prompt');
       const existingNotFoundPrompt = document.getElementById('ollama-not-found-prompt');
       if (existingConnectionPrompt) {
@@ -316,63 +652,87 @@ async function checkStatus() {
         existingNotFoundPrompt.remove();
       }
       await loadModels();
+      return true;
     } else {
       dot.classList.remove('online');
       stat.textContent = 'Offline';
-      // Ollama is not running - show not found prompt
       showOllamaNotFoundPrompt();
+      return false;
     }
   } catch (error) {
+    console.error('Status check failed:', error);
     dot.classList.remove('online');
-    stat.textContent = 'Connection Error';
-    // Connection error - show connection error prompt with retry option
-    showConnectionErrorPrompt();
+    if (error.name === 'AbortError') {
+      stat.textContent = 'Connection Timeout';
+    } else if (error.message && (error.message.includes('Failed to fetch') || error.message.includes('NetworkError'))) {
+      stat.textContent = 'Network Error';
+    } else if (error.message && error.message.includes('HTTP 500')) {
+      stat.textContent = 'Server Error';
+    } else {
+      stat.textContent = 'Connection Error';
+    }
+    if (retryCount < maxRetries && (
+      error.name === 'AbortError' ||
+      (error.message && (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')))
+    )) {
+      console.log(`Retrying status check in ${retryDelay}ms (attempt ${retryCount + 1}/${maxRetries})`);
+      setTimeout(() => checkStatus(retryCount + 1), retryDelay);
+      return false;
+    }
+    if (error.message && error.message.includes('HTTP 500')) {
+      showServerErrorPrompt();
+    } else {
+      showConnectionErrorPrompt();
+    }
+    return false;
   }
 }
-
 async function loadModels() {
   try {
     const response = await fetch('ollama_api.php?action=models');
     const data = await response.json();
-    modelSel.innerHTML = '';
-    
     if (data.success) {
-      const defaultOption = new Option('Select a model to start chatting...', '');
-      modelSel.add(defaultOption);
-      
+      const previousModel = currentModel; // Save current selection
+      modelSel.innerHTML = '';
       if (data.models.length === 0) {
-        // No models available - this might mean Ollama is installed but no models are downloaded
-        // Show the not found prompt which gives option to go to download page
+        const defaultOption = new Option('No models available', '');
+        modelSel.add(defaultOption);
         showOllamaNotFoundPrompt();
+        availableModels = [];
       } else {
+        availableModels = data.models;
         data.models.forEach(model => {
           const option = new Option(`${model.name} (${model.size})`, model.name);
           modelSel.add(option);
         });
+        const downloadOption = new Option('🔽 Download more models...', 'download');
+        downloadOption.className = 'download-option';
+        modelSel.add(downloadOption);
+        if (previousModel && data.models.some(m => m.name === previousModel)) {
+          modelSel.value = previousModel;
+        } else if (!currentModel && data.models.length > 0) {
+          currentModel = data.models[0].name;
+          modelSel.value = currentModel;
+          setChatEnabled(true);
+          inp.placeholder = `Chat with ${currentModel}...`;
+        }
       }
-      
-      // Add download option at the end
-      const downloadOption = new Option('🔽 Download more models...', 'download');
-      downloadOption.className = 'download-option';
-      modelSel.add(downloadOption);
-      
       modelSel.disabled = false;
     } else {
       modelSel.innerHTML = '<option>Error loading models</option>';
-      // Error loading models - show connection error prompt
+      availableModels = [];
       showConnectionErrorPrompt();
     }
   } catch (error) {
     modelSel.innerHTML = '<option>Error loading models</option>';
-    // Connection error while loading models - show connection error prompt
+    availableModels = [];
     showConnectionErrorPrompt();
   }
 }
-
 modelSel.addEventListener('change', function() {
   if (this.value === 'download') {
-    this.value = ''; // Reset selection
-    // Add a timestamp parameter to prevent caching
+    const previousValue = currentModel || ''; // Save current model
+    this.value = previousValue; // Restore selection before navigating
     window.location.href = `dl.php?t=${Date.now()}`; 
     return;
   }
@@ -384,36 +744,62 @@ modelSel.addEventListener('change', function() {
     inp.placeholder = 'Select a model to start chatting...';
   }
 });
-
 function setChatEnabled(enabled) {
   const hasText = inp.value.trim().length > 0;
-  inp.disabled = !enabled;
   btn.disabled = !enabled || !hasText || isTyping;
 }
-
-async function sendMessage() {
+async function sendMessage(isContinue = false) {
+  console.log('[Send] Starting sendMessage, isContinue:', isContinue, 'currentModel:', currentModel, 'isTyping:', isTyping);
   const text = inp.value.trim();
-  if (!text || !currentModel || isTyping) return;
-  appendMessage('user', text);
-  currentChat.push({ role: 'user', content: text });
-  inp.value = '';
-  inp.style.height = 'auto';
-  setChatEnabled(!!currentModel);
-  
-  // Create empty assistant message for live streaming
-  currentStreamingMessage = createStreamingMessage();
-  streamingContent = '';
-  streamingThought = '';
-  
+  if (!currentModel) {
+    console.error('[Send] No model selected!');
+    showAlert('No Model Selected', 'Please select a model before sending a message.', 'warning');
+    return;
+  }
+  if (!isContinue && !text) {
+    console.log('[Send] No text to send');
+    return;
+  }
+  if (isTyping) {
+    console.log('[Send] Already typing, ignoring');
+    return;
+  }
+  isTyping = true;
+  if (!isContinue) {
+    autoScroll = true;
+  }
+  if (!isContinue) {
+    console.log('[Send] Adding user message:', text);
+    appendMessage('user', text);
+    currentChat.push({ role: 'user', content: text });
+    inp.value = '';
+    inp.style.height = 'auto';
+  }
+  stopBtn.style.display = 'flex';
+  btn.style.display = 'none';
+  continueBtn.style.display = 'none';
+  btn.disabled = true;
+  isStreamStopped = false;
+  if (!isContinue) {
+    currentStreamingMessage = createStreamingMessage();
+    streamingContent = '';
+    streamingThought = '';
+  }
   try {
     let messagesToSend = [];
     if (memoryEnabled && currentChat.length > 0) {
       messagesToSend = [...currentChat];
     } else {
-      messagesToSend = [{ role: 'user', content: text }];
+      if (isContinue && currentChat.length > 0) {
+        messagesToSend = [...currentChat];
+      } else if (!isContinue && text) {
+        messagesToSend = [{ role: 'user', content: text }];
+      } else {
+        throw new Error('No messages to send');
+      }
     }
-    
-    // Use fetch with ReadableStream for live streaming
+    console.log('[Send] Sending request to API, model:', currentModel, 'messages:', messagesToSend.length);
+    abortController = new AbortController();
     const response = await fetch('ollama_api.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -422,75 +808,130 @@ async function sendMessage() {
         model: currentModel,
         messages: messagesToSend,
         useMemory: memoryEnabled
-      })
+      }),
+      signal: abortController.signal
     });
-
+    console.log('[Send] Response status:', response.status, response.statusText);
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+      let bodyText = '';
+      try {
+        bodyText = await response.text();
+        console.error('[Send] Error response body:', bodyText);
+      } catch (e) {
+        bodyText = `HTTP ${response.status} ${response.statusText}`;
+      }
+      throw new Error(`HTTP ${response.status}: ${bodyText}`);
     }
-
-    const reader = response.body.getReader();
+    if (!response.body) {
+      const textBody = await response.text();
+      console.error('[Send] No response body:', textBody);
+      try {
+        const parsed = JSON.parse(textBody);
+        if (parsed.error) throw new Error(parsed.error);
+        if (parsed.success === false) throw new Error(parsed.error || 'Server returned failure');
+      } catch (e) {
+        throw new Error(textBody || 'Empty response from server');
+      }
+    }
+    streamReader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
-
+    console.log('[Send] Starting to read stream');
     while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      
+      if (isStreamStopped) {
+        console.log('[Send] Stream stopped by user');
+        break;
+      }
+      const { done, value } = await streamReader.read();
+      if (done) {
+        console.log('[Send] Stream ended');
+        break;
+      }
       buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split('\n');
       buffer = lines.pop() || ''; // Keep incomplete line in buffer
-      
-      for (const line of lines) {
-        if (line.startsWith('data: ')) {
-          const data = line.slice(6);
-          if (data === '[DONE]') {
+      for (const rawLine of lines) {
+        const line = rawLine.trim();
+        if (!line) continue;
+        let payload = null;
+        if (line.startsWith('data:')) {
+          const data = line.slice(5).trim();
+          if (data === '[DONE]' || data === ' [DONE]') {
+            console.log('[Send] Received [DONE] signal');
             finishStreamingMessage();
             return;
           }
-          
           try {
-            const parsed = JSON.parse(data);
-            if (parsed.error) {
-              throw new Error(parsed.error);
-            }
-            if (parsed.content) {
-              appendToStreamingMessage(parsed.content);
-            }
-          } catch (e) {
-            console.error('Error parsing streaming data:', e);
+            payload = JSON.parse(data);
+          } catch (err) {
+            console.warn('[Send] Non-JSON streaming chunk:', data);
+            continue;
           }
+        } else {
+          try {
+            payload = JSON.parse(line);
+          } catch (err) {
+            continue;
+          }
+        }
+        if (!payload) continue;
+        if (payload.error) {
+          throw new Error(payload.error);
+        }
+        if (payload.content) {
+          appendToStreamingMessage(payload.content);
+          scrollToBottomIfNeeded();
         }
       }
     }
-    
+    console.log('[Send] Finalizing message');
     finishStreamingMessage();
-    
   } catch (error) {
-    console.error('Streaming error:', error);
-    if (currentStreamingMessage) {
-      removeStreamingMessage();
+    console.error('[Send] Streaming error:', error);
+    if (error.name === 'AbortError') {
+      console.log('[Send] Request was aborted by user');
+      if (currentStreamingMessage) {
+        finishStreamingMessage();
+      }
+    } else {
+      if (currentStreamingMessage) {
+        removeStreamingMessage();
+      }
+      const msg = error && error.message ? `❌ ${error.message}` : '❌ Connection error. Please try again.';
+      appendMessage('assistant', msg, null, currentModel);
     }
-    appendMessage('assistant', '❌ Connection error. Please try again.');
+  } finally {
+    isTyping = false;
+    streamReader = null;
+    abortController = null;
+    stopBtn.style.display = 'none';
+    if (!isStreamStopped) {
+      continueBtn.style.display = 'none';
+    }
+    btn.style.display = 'flex';
+    const hasText = inp.value.trim().length > 0;
+    btn.disabled = !currentModel || !hasText || isTyping;
+    console.log('[Send] Cleanup complete');
   }
 }
-
 function createStreamingMessage() {
   isTyping = true;
   setChatEnabled(!!currentModel);
-  
   const message = document.createElement('div');
   message.className = 'message assistant';
   message.id = 'streaming-message';
-  
   const avatar = document.createElement('div');
   avatar.className = 'avatar';
   avatar.innerHTML = '<i class="fas fa-robot"></i>';
-  
+  const nameLabel = document.createElement('div');
+  nameLabel.className = 'message-name';
+  nameLabel.textContent = currentModel || 'AI';
+  const avatarWrapper = document.createElement('div');
+  avatarWrapper.className = 'avatar-wrapper';
+  avatarWrapper.appendChild(avatar);
+  avatarWrapper.appendChild(nameLabel);
   const messageContent = document.createElement('div');
   messageContent.className = 'message-content';
-  
-  // Add message actions div with copy button - Make sure it's visible during streaming
   const messageActions = document.createElement('div');
   messageActions.className = 'message-actions';
   messageActions.style.opacity = '1'; // Make it visible right away
@@ -500,198 +941,132 @@ function createStreamingMessage() {
     </button>
   `;
   messageContent.appendChild(messageActions);
-  
-  // Create text div first
   const text = document.createElement('div');
   text.className = 'text';
   text.id = 'streaming-text';
-  
-  // Add cursor for typing effect
   const cursor = document.createElement('span');
   cursor.className = 'streaming-cursor';
   cursor.innerHTML = '▊';
   cursor.style.animation = 'blink 1s infinite';
   text.appendChild(cursor);
-  
-  // Add text content first (before thought container)
   messageContent.appendChild(text);
-  
-  // Create thought container after text
   const thoughtContainer = document.createElement('div');
   thoughtContainer.className = 'thought-container';
   thoughtContainer.id = 'streaming-thought-container';
   thoughtContainer.style.display = 'none'; // Initially hidden
-  
   const thoughtToggle = document.createElement('button');
   thoughtToggle.className = 'thought-toggle';
   thoughtToggle.innerHTML = '<i class="fas fa-chevron-down"></i> AI Thought';
-  
   const thoughtContent = document.createElement('div');
   thoughtContent.className = 'thought-content';
   thoughtContent.id = 'streaming-thought-content';
-  
   thoughtContainer.appendChild(thoughtToggle);
   thoughtContainer.appendChild(thoughtContent);
-  
-  // Add event listener for thought toggle
   thoughtToggle.addEventListener('click', () => {
     thoughtContainer.classList.toggle('expanded');
   });
-  
-  // Add thought container after text content
   messageContent.appendChild(thoughtContainer);
-  
-  // Add event listener to the copy button
   messageActions.querySelector('[data-action="copy-response"]').addEventListener('click', () => {
     copyResponseText(message);
   });
-  
-  message.appendChild(avatar);
+  message.appendChild(avatarWrapper);
   message.appendChild(messageContent);
   msgs.appendChild(message);
   msgs.scrollTop = msgs.scrollHeight;
-  
   return message;
 }
-
 function appendToStreamingMessage(content) {
   if (!currentStreamingMessage) return;
-  
   const textElement = currentStreamingMessage.querySelector('#streaming-text');
   const cursor = textElement.querySelector('.streaming-cursor');
   const thoughtContainer = currentStreamingMessage.querySelector('#streaming-thought-container');
   const thoughtContent = currentStreamingMessage.querySelector('#streaming-thought-content');
-  
-  // Check if content contains thinking tags
   const thinkMatch = content.match(/<think>([\s\S]*?)<\/think>/);
   if (thinkMatch) {
     streamingThought += thinkMatch[1];
     content = content.replace(/<think>[\s\S]*?<\/think>/g, '');
-    
-    // Update thought content and show the container if there's thought content
     if (streamingThought.trim() && thoughtContainer) {
       thoughtContent.textContent = streamingThought.trim();
       thoughtContainer.style.display = 'block';
-      // Add expanded class to make toggle button work properly
       thoughtContainer.classList.add('expanded');
     }
   }
-  
   streamingContent += content;
-  
-  // Smart code block handling - detect opening ``` and pre-add closing ```
   let displayContent = streamingContent;
-  
-  // Count unclosed code blocks
   const codeBlockMatches = [...displayContent.matchAll(/```(\w+)?/g)];
   const unclosedBlocks = codeBlockMatches.length % 2;
-  
   if (unclosedBlocks === 1) {
-    // There's an unclosed code block, add temporary closing
     displayContent += '\n```';
   }
-  
-  // Remove cursor temporarily
   if (cursor) cursor.remove();
-  
-  // Parse and display content (without thinking tags since we handle them separately)
   const parsed = parseMarkdown(displayContent);
   textElement.innerHTML = parsed.content;
-  
-  // Re-add cursor at the end
   const newCursor = document.createElement('span');
   newCursor.className = 'streaming-cursor';
   newCursor.innerHTML = '▊';
   newCursor.style.animation = 'blink 1s infinite';
   textElement.appendChild(newCursor);
-  
-  // Auto-scroll to bottom and handle code block scrolling
   msgs.scrollTop = msgs.scrollHeight;
-  
-  // If we're inside a code block, scroll the code content to the bottom
   const codeContainers = textElement.querySelectorAll('.code-content');
   codeContainers.forEach(codeContent => {
     codeContent.scrollTop = codeContent.scrollHeight;
   });
 }
-
 function finishStreamingMessage() {
   if (!currentStreamingMessage) return;
-  
   isTyping = false;
   setChatEnabled(!!currentModel);
-  
+  stopBtn.style.display = 'none';
+  btn.style.display = 'flex';
+  continueBtn.style.display = 'none';
   const textElement = currentStreamingMessage.querySelector('#streaming-text');
   const cursor = textElement.querySelector('.streaming-cursor');
   const thoughtContainer = currentStreamingMessage.querySelector('#streaming-thought-container');
   const thoughtContent = currentStreamingMessage.querySelector('#streaming-thought-content');
-  
-  // Remove cursor only
   if (cursor) cursor.remove();
-  
-  // Parse the final content without the temporary closing ```
-  // BUT preserve the original content with <think> tags for proper parsing
+  const codeBlockCount = (streamingContent.match(/```/g) || []).length;
+  if (codeBlockCount % 2 !== 0) {
+    streamingContent += '\n```';
+  }
   const originalContentWithThinks = streamingContent + (streamingThought ? `<think>${streamingThought}</think>` : '');
   const parsed = parseMarkdown(originalContentWithThinks);
-  
-  // The final content should NOT include think tags in the main text
   const finalContent = streamingContent || 'No response received';
-  
-  // Use the thought from streaming OR from parsing (whichever is available)
   const finalThought = streamingThought.trim() || parsed.thinking || null;
-  
-  // Update the text content with final parsed markdown (without think tags)
   const cleanParsed = parseMarkdown(finalContent);
   textElement.innerHTML = cleanParsed.content;
-  
-  // Remove streaming IDs from main elements but preserve thought container structure
   currentStreamingMessage.removeAttribute('id');
   textElement.removeAttribute('id');
-  
-  // Handle thought container properly - ALWAYS preserve if there's content
   if (thoughtContainer) {
-    // Remove only the streaming IDs, keep everything else intact
     thoughtContainer.removeAttribute('id');
     if (thoughtContent) {
       thoughtContent.removeAttribute('id');
     }
-    
-    // Check if we have any thought content (prioritize streaming thought over parsed)
     const hasThoughtContent = finalThought && finalThought.trim();
-    
     if (hasThoughtContent) {
-      // Update the thought content with the final thought
       if (thoughtContent) {
         thoughtContent.textContent = finalThought;
       }
-      // Ensure the thought container stays visible and properly configured
       thoughtContainer.style.display = 'block';
-      // Keep it collapsed by default, let user expand if they want
       thoughtContainer.classList.remove('expanded');
     } else {
-      // Only hide if there's truly no content
       thoughtContainer.style.display = 'none';
     }
   }
-  
-  // Add code block handlers to the finalized message
   addCodeBlockHandlers(currentStreamingMessage);
-  
-  // Add to chat history with the final thought
   currentChat.push({ 
     role: 'assistant', 
     content: finalContent, 
-    thought: finalThought 
+    thought: finalThought,
+    wasStopped: isStreamStopped  // Track if user stopped this message
   });
-  
-  if (!currentChatId || currentChat.length === 2) {
-    currentChatId = Date.now();
+  console.log('[Streaming] Message finished, currentChat length:', currentChat.length, 'currentChatId:', currentChatId, 'wasStopped:', isStreamStopped);
+  if (currentChat.length === 2 && !chatHistory.find(c => String(c.id) === String(currentChatId))) {
+    console.log('[Streaming] First exchange in new chat, saving with ID:', currentChatId);
     saveChatToHistory();
-  } else {
+  } else if (currentChatId) {
+    console.log('[Streaming] Updating existing chat:', currentChatId);
     updateChatInHistory();
   }
-  
-  // Ensure copy button is visible after streaming
   const messageActions = currentStreamingMessage.querySelector('.message-actions');
   if (messageActions) {
     messageActions.style.opacity = '1';
@@ -699,13 +1074,44 @@ function finishStreamingMessage() {
       messageActions.style.opacity = ''; // Reset to use CSS hover rules after a delay
     }, 2000);
   }
-  
-  // Clean up streaming variables
+  const finalizedMessage = currentStreamingMessage;
+  if (isStreamStopped) {
+    const messageContent = finalizedMessage.querySelector('.message-content');
+    const responseActions = document.createElement('div');
+    responseActions.className = 'response-actions';
+    responseActions.innerHTML = `
+      <button class="response-action-btn" data-action="regenerate" title="Regenerate response">
+        <i class="fas fa-sync-alt"></i> Regenerate
+      </button>
+      <button class="response-action-btn" data-action="continue" title="Continue response">
+        <i class="fas fa-arrow-right"></i> Continue
+      </button>
+    `;
+    responseActions.querySelector('[data-action="regenerate"]').addEventListener('click', () => {
+      regenerateResponse(finalizedMessage);
+    });
+    responseActions.querySelector('[data-action="continue"]').addEventListener('click', () => {
+      continueResponse(finalizedMessage);
+    });
+    messageContent.appendChild(responseActions);
+  } else {
+    const messageContent = finalizedMessage.querySelector('.message-content');
+    const responseActions = document.createElement('div');
+    responseActions.className = 'response-actions';
+    responseActions.innerHTML = `
+      <button class="response-action-btn" data-action="regenerate" title="Regenerate response">
+        <i class="fas fa-sync-alt"></i> Regenerate
+      </button>
+    `;
+    responseActions.querySelector('[data-action="regenerate"]').addEventListener('click', () => {
+      regenerateResponse(finalizedMessage);
+    });
+    messageContent.appendChild(responseActions);
+  }
   currentStreamingMessage = null;
   streamingContent = '';
   streamingThought = '';
 }
-
 function removeStreamingMessage() {
   if (currentStreamingMessage) {
     currentStreamingMessage.remove();
@@ -715,18 +1121,16 @@ function removeStreamingMessage() {
   }
   isTyping = false;
   setChatEnabled(!!currentModel);
+  stopBtn.style.display = 'none';
+  btn.style.display = 'flex';
+  continueBtn.style.display = 'none';
 }
-
-// Remove the old showTypingIndicator and hideTypingIndicator functions since we're using live streaming now
 function parseMarkdown(content) {
-  // First, extract and remove thinking content before processing other markdown
   let thinkingContent = '';
   content = content.replace(/<think>([\s\S]*?)<\/think>/g, (match, thinking) => {
     thinkingContent = thinking.trim(); // Store the thinking content
     return ''; // Remove the thinking tags from the main content
   });
-
-  // Now process the rest of the markdown normally
   content = content.replace(/\\\[\s*\\boxed\{([^}]+)\}\s*\\\]/g, (match, boxedContent) => {
     try {
       return `<div class="math-display">${katex.renderToString(`\\boxed{${boxedContent}}`, {
@@ -780,101 +1184,110 @@ function parseMarkdown(content) {
       return match;
     }
   });
+  const codeBlocks = [];
+  const inlineCodes = [];
   content = content.replace(/```(\w+)?\n?([\s\S]*?)```/g, (match, lang, code) => {
-    const language = lang || 'text';
-    const highlighted = Prism.highlight(
-      code.trim(),
-      Prism.languages[language] || Prism.languages.plain,
-      language
-    );
+    const language = (lang || 'text').toLowerCase();
+    let highlighted = '';
+    try {
+      if (typeof Prism !== 'undefined' && Prism.languages) {
+        let grammar = Prism.languages[language];
+        if (language === 'php' && (!grammar || !grammar.tokenizePlaceholders)) {
+          grammar = Prism.languages.markup || Prism.languages.javascript;
+        }
+        if (!grammar) {
+          grammar = Prism.languages[lang] || Prism.languages.markup || Prism.languages.javascript || Prism.languages.clike;
+        }
+        if (grammar && Prism.highlight) {
+          highlighted = Prism.highlight(code.trim(), grammar, language);
+        } else {
+          highlighted = escapeHtml(code.trim());
+        }
+      } else {
+        highlighted = escapeHtml(code.trim());
+      }
+    } catch (e) {
+      console.warn('Prism highlighting failed for ' + language + ', using plain text:', e.message);
+      highlighted = escapeHtml(code.trim());
+    }
     const isPreviewable = ['html', 'css', 'javascript', 'js'].includes(language.toLowerCase());
     const isRunnable = ['python', 'javascript', 'js'].includes(language.toLowerCase());
     const langClass = language ? `language-${language}` : '';
-    return `
-      <div class="code-container">
-        <div class="code-header">
-          <span class="code-lang ${langClass}">${language}</span>
-          <div class="code-actions">
-            <button class="code-btn" data-action="copy" data-tooltip="Copy code">
-              <i class="fas fa-copy"></i>
-            </button>
-            <button class="code-btn download-btn" data-action="download" data-tooltip="Download code">
-              <i class="fas fa-download"></i>
-            </button>
-            ${isPreviewable ?
-              `<button class="code-btn preview-btn" data-action="preview" data-tooltip="Preview code">
-                <i class="fas fa-eye"></i>
-              </button>` : ''}
-            ${isRunnable ?
-              `<button class="code-btn run-btn" data-action="run" data-tooltip="Run code">
-                <i class="fas fa-play"></i>
-              </button>` : ''}
-          </div>
-        </div>
-        <div class="code-content">
-          <pre><code class="language-${language}">${highlighted}</code></pre>
-        </div>
-      </div>
-    `;
+    const placeholder = `___CODEBLOCK_${codeBlocks.length}___`;
+    codeBlocks.push(`<div class="code-container"><div class="code-header"><span class="code-lang ${langClass}">${language}</span><div class="code-actions"><button class="code-btn" data-action="copy" data-tooltip="Copy code" disabled><i class="fas fa-copy"></i></button><button class="code-btn download-btn" data-action="download" data-tooltip="Download code" disabled><i class="fas fa-download"></i></button>${isPreviewable ? `<button class="code-btn preview-btn" data-action="preview" data-tooltip="Preview code" disabled><i class="fas fa-eye"></i></button>` : ''}${isRunnable ? `<button class="code-btn run-btn" data-action="run" data-tooltip="Run code" disabled><i class="fas fa-play"></i></button>` : ''}</div></div><div class="code-content"><pre><code class="language-${language}">${highlighted}</code></pre></div></div>`);
+    return placeholder;
   });
-  content = content.replace(/`([^`]+)`/g, '<code>$1</code>');
+  content = content.replace(/`([^`]+)`/g, (match, code) => {
+    const placeholder = `___INLINECODE_${inlineCodes.length}___`;
+    inlineCodes.push(`<code>${escapeHtml(code)}</code>`);
+    return placeholder;
+  });
   content = content.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
   content = content.replace(/\*(.*?)\*/g, '<em>$1</em>');
   content = content.replace(/\n/g, '<br>');
-  
-  // Return both the processed content and the thinking content
+  inlineCodes.forEach((code, index) => {
+    content = content.replace(`___INLINECODE_${index}___`, code);
+  });
+  codeBlocks.forEach((block, index) => {
+    content = content.replace(`___CODEBLOCK_${index}___`, block);
+  });
   return { content: content, thinking: thinkingContent };
 }
-// Modified appendMessage to handle thought
-function appendMessage(role, content, thought = null) {
+function appendMessage(role, content, thought = null, modelName = null, wasStopped = false) {
+  console.log('[Message] Appending message:', role, 'Length:', content.length, 'Stopped:', wasStopped);
   const message = document.createElement('div');
   message.className = `message ${role}`;
+  message.dataset.content = content; // Store original content for editing
   const avatar = document.createElement('div');
   avatar.className = 'avatar';
   avatar.innerHTML = role === 'user'
     ? '<i class="fas fa-user"></i>'
     : '<i class="fas fa-robot"></i>';
+  const nameLabel = document.createElement('div');
+  nameLabel.className = 'message-name';
+  nameLabel.textContent = role === 'user' ? 'You' : (modelName || currentModel || 'AI');
+  const avatarWrapper = document.createElement('div');
+  avatarWrapper.className = 'avatar-wrapper';
+  avatarWrapper.appendChild(avatar);
+  avatarWrapper.appendChild(nameLabel);
   const messageContent = document.createElement('div');
   messageContent.className = 'message-content';
-  
-  // Add copy button for assistant messages - Make it visible by default
-  if (role === 'assistant') {
-    const messageActions = document.createElement('div');
-    messageActions.className = 'message-actions';
-    messageActions.style.opacity = '1'; // Make it visible by default
+  const messageActions = document.createElement('div');
+  messageActions.className = 'message-actions';
+  if (role === 'user') {
     messageActions.innerHTML = `
-      <button class="message-action-btn" data-action="copy-response" title="Copy response">
+      <button class="message-action-btn" data-action="copy" title="Copy message">
+        <i class="fas fa-copy"></i>
+      </button>
+      <button class="message-action-btn" data-action="edit" title="Edit message">
+        <i class="fas fa-edit"></i>
+      </button>
+    `;
+    messageActions.querySelector('[data-action="copy"]').addEventListener('click', () => {
+      copyMessageText(message);
+    });
+    messageActions.querySelector('[data-action="edit"]').addEventListener('click', () => {
+      editMessage(message);
+    });
+  } else {
+    messageActions.innerHTML = `
+      <button class="message-action-btn" data-action="copy" title="Copy response">
         <i class="fas fa-copy"></i>
       </button>
     `;
-    messageContent.appendChild(messageActions);
-    
-    // Add event listener for copy button
-    messageActions.querySelector('[data-action="copy-response"]').addEventListener('click', () => {
-      copyResponseText(message);
+    messageActions.querySelector('[data-action="copy"]').addEventListener('click', () => {
+      copyMessageText(message);
     });
-    
-    // Reset opacity after a delay to use CSS hover rules
-    setTimeout(() => {
-      messageActions.style.opacity = '';
-    }, 2000);
   }
-  
+  messageContent.appendChild(messageActions);
   const text = document.createElement('div');
   text.className = 'text';
-  
-  // Parse the markdown and get both content and thinking
   const parsed = parseMarkdown(content);
   text.innerHTML = parsed.content;
-  
-  // If there's extracted thinking from parseMarkdown, use it as the thought
   if (parsed.thinking && !thought) {
     thought = parsed.thinking;
   }
-  
   messageContent.appendChild(text);
-  
-  // Add thought section if thought exists and is not empty
   if (role === 'assistant' && thought && thought.trim()) {
       const thoughtContainer = document.createElement('div');
       thoughtContainer.className = 'thought-container';
@@ -887,18 +1300,42 @@ function appendMessage(role, content, thought = null) {
       thoughtContainer.appendChild(thoughtToggle);
       thoughtContainer.appendChild(thoughtContent);
       messageContent.appendChild(thoughtContainer);
-      // Add event listener to toggle thought visibility
       thoughtToggle.addEventListener('click', () => {
           thoughtContainer.classList.toggle('expanded');
       });
   }
-  message.appendChild(avatar);
+  if (role === 'assistant') {
+    const responseActions = document.createElement('div');
+    responseActions.className = 'response-actions';
+    let buttonsHtml = `
+      <button class="response-action-btn" data-action="regenerate" title="Regenerate response">
+        <i class="fas fa-sync-alt"></i> Regenerate
+      </button>
+    `;
+    if (wasStopped) {
+      buttonsHtml += `
+        <button class="response-action-btn" data-action="continue" title="Continue response">
+          <i class="fas fa-arrow-right"></i> Continue
+        </button>
+      `;
+    }
+    responseActions.innerHTML = buttonsHtml;
+    responseActions.querySelector('[data-action="regenerate"]').addEventListener('click', () => {
+      regenerateResponse(message);
+    });
+    if (wasStopped) {
+      responseActions.querySelector('[data-action="continue"]').addEventListener('click', () => {
+        continueResponse(message);
+      });
+    }
+    messageContent.appendChild(responseActions);
+  }
+  message.appendChild(avatarWrapper);
   message.appendChild(messageContent);
   msgs.appendChild(message);
   msgs.scrollTop = msgs.scrollHeight;
   addCodeBlockHandlers(message);
 }
-
 function downloadCode(code, language) {
   const fileExtensions = {
     'python': 'py',
@@ -917,10 +1354,8 @@ function downloadCode(code, language) {
     'markdown': 'md',
     'md': 'md'
   };
-  
   const extension = fileExtensions[language.toLowerCase()] || 'txt';
   const filename = `code-${Date.now()}.${extension}`;
-  
   const blob = new Blob([code], { type: 'text/plain' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -929,12 +1364,9 @@ function downloadCode(code, language) {
   a.click();
   URL.revokeObjectURL(url);
 }
-
-function copyResponseText(messageElement) {
+function copyMessageText(messageElement) {
   const textElement = messageElement.querySelector('.text');
   if (!textElement) return;
-  
-  // Get the text content without HTML tags but preserve line breaks
   let textContent = textElement.innerHTML
     .replace(/<br>/g, '\n')
     .replace(/<[^>]+>/g, '')
@@ -944,10 +1376,8 @@ function copyResponseText(messageElement) {
     .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"')
     .replace(/&#039;/g, "'");
-  
   navigator.clipboard.writeText(textContent).then(() => {
-    // Show success feedback
-    const copyBtn = messageElement.querySelector('[data-action="copy-response"]');
+    const copyBtn = messageElement.querySelector('[data-action="copy"]');
     if (copyBtn) {
       const originalHTML = copyBtn.innerHTML;
       copyBtn.innerHTML = '<i class="fas fa-check"></i>';
@@ -958,12 +1388,422 @@ function copyResponseText(messageElement) {
       }, 2000);
     }
   }).catch(error => {
-    console.error('Failed to copy response:', error);
+    console.error('Failed to copy message:', error);
   });
 }
-
+function editMessage(messageElement) {
+  console.log('[Edit] Editing message');
+  const originalContent = messageElement.dataset.content;
+  if (!originalContent) return;
+  const messages = Array.from(msgs.querySelectorAll('.message'));
+  const messageIndex = messages.indexOf(messageElement);
+  if (messageIndex === -1) return;
+  for (let i = messages.length - 1; i >= messageIndex; i--) {
+    messages[i].remove();
+  }
+  currentChat = currentChat.slice(0, messageIndex);
+  inp.value = originalContent;
+  inp.style.height = 'auto';
+  inp.style.height = Math.min(inp.scrollHeight, 200) + 'px';
+  inp.focus();
+  btn.disabled = !currentModel || !originalContent.trim();
+  console.log('[Edit] Message loaded for editing, subsequent messages removed');
+}
+function regenerateResponse(messageElement) {
+  console.log('[Regenerate] Regenerating response');
+  const messages = Array.from(msgs.querySelectorAll('.message'));
+  const messageIndex = messages.indexOf(messageElement);
+  if (messageIndex === -1) return;
+  for (let i = messages.length - 1; i >= messageIndex; i--) {
+    messages[i].remove();
+  }
+  currentChat = currentChat.slice(0, messageIndex);
+  if (currentChat.length === 0 || currentChat[currentChat.length - 1].role !== 'user') {
+    console.error('[Regenerate] Last message in chat is not a user message');
+    return;
+  }
+  console.log('[Regenerate] Regenerating from user message, currentChat length:', currentChat.length);
+  sendMessageForRegenerate();
+}
+async function sendMessageForRegenerate() {
+  console.log('[Regenerate] Sending message for regeneration');
+  if (!currentModel) {
+    console.error('[Regenerate] No model selected!');
+    showAlert('No Model Selected', 'Please select a model before regenerating.', 'warning');
+    return;
+  }
+  if (isTyping) {
+    console.log('[Regenerate] Already typing, ignoring');
+    return;
+  }
+  if (currentChat.length === 0 || currentChat[currentChat.length - 1].role !== 'user') {
+    console.error('[Regenerate] No user message to regenerate from');
+    return;
+  }
+  isTyping = true;
+  isStreamStopped = false;
+  stopBtn.style.display = 'flex';
+  btn.style.display = 'none';
+  continueBtn.style.display = 'none';
+  btn.disabled = true;
+  currentStreamingMessage = createStreamingMessage();
+  streamingContent = '';
+  streamingThought = '';
+  try {
+    let messagesToSend = [];
+    if (memoryEnabled && currentChat.length > 0) {
+      messagesToSend = [...currentChat];
+    } else {
+      messagesToSend = [currentChat[currentChat.length - 1]];
+    }
+    console.log('[Regenerate] Sending request to API, model:', currentModel, 'messages:', messagesToSend.length);
+    const response = await fetch('ollama_api.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'chat_stream',
+        model: currentModel,
+        messages: messagesToSend,
+        useMemory: memoryEnabled
+      })
+    });
+    console.log('[Regenerate] Response status:', response.status, response.statusText);
+    if (!response.ok) {
+      let bodyText = '';
+      try {
+        bodyText = await response.text();
+        console.error('[Regenerate] Error response body:', bodyText);
+      } catch (e) {
+        bodyText = `HTTP ${response.status} ${response.statusText}`;
+      }
+      throw new Error(`HTTP ${response.status}: ${bodyText}`);
+    }
+    if (!response.body) {
+      const textBody = await response.text();
+      console.error('[Regenerate] No response body:', textBody);
+      try {
+        const parsed = JSON.parse(textBody);
+        if (parsed.error) throw new Error(parsed.error);
+        if (parsed.success === false) throw new Error(parsed.error || 'Server returned failure');
+      } catch (e) {
+        throw new Error(textBody || 'Empty response from server');
+      }
+    }
+    streamReader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    console.log('[Regenerate] Starting to read stream');
+    while (true) {
+      if (isStreamStopped) {
+        console.log('[Regenerate] Stream stopped by user');
+        break;
+      }
+      const { done, value } = await streamReader.read();
+      if (done) {
+        console.log('[Regenerate] Stream ended');
+        break;
+      }
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+      for (const rawLine of lines) {
+        const line = rawLine.trim();
+        if (!line) continue;
+        let payload = null;
+        if (line.startsWith('data:')) {
+          const data = line.slice(5).trim();
+          if (data === '[DONE]' || data === ' [DONE]') {
+            console.log('[Regenerate] Received [DONE] signal');
+            finishStreamingMessage();
+            return;
+          }
+          try {
+            payload = JSON.parse(data);
+          } catch (err) {
+            console.warn('[Regenerate] Non-JSON streaming chunk:', data);
+            continue;
+          }
+        } else {
+          try {
+            payload = JSON.parse(line);
+          } catch (err) {
+            continue;
+          }
+        }
+        if (!payload) continue;
+        if (payload.error) {
+          throw new Error(payload.error);
+        }
+        if (payload.content) {
+          appendToStreamingMessage(payload.content);
+          scrollToBottomIfNeeded();
+        }
+      }
+    }
+    finishStreamingMessage();
+  } catch (error) {
+    console.error('[Regenerate] Error during regeneration:', error);
+    showAlert('Regeneration Error', error.message || 'Failed to regenerate response', 'error');
+    removeStreamingMessage();
+  }
+}
+function continueResponse(messageElement) {
+  console.log('[Continue] Continuing response from stopped message', messageElement);
+  if (!messageElement) {
+    console.error('[Continue] No message element provided');
+    return;
+  }
+  if (isTyping) {
+    console.log('[Continue] Already generating, ignoring');
+    return;
+  }
+  const messageContentDiv = messageElement.querySelector('.message-content');
+  if (!messageContentDiv) {
+    console.error('[Continue] Could not find message-content div');
+    return;
+  }
+  const textElement = messageContentDiv.querySelector('.text');
+  if (!textElement) {
+    console.error('[Continue] Could not find text element in message');
+    return;
+  }
+  const messages = Array.from(msgs.querySelectorAll('.message'));
+  const messageIndex = messages.indexOf(messageElement);
+  if (messageIndex === -1 || messageIndex >= currentChat.length) {
+    console.error('[Continue] Could not find message in currentChat');
+    return;
+  }
+  const assistantMessage = currentChat[messageIndex];
+  if (!assistantMessage || assistantMessage.role !== 'assistant') {
+    console.error('[Continue] Message is not an assistant message');
+    return;
+  }
+  assistantMessage.wasStopped = false;
+  isTyping = true;
+  isStreamStopped = false;
+  stopBtn.style.display = 'flex';
+  btn.style.display = 'none';
+  continueBtn.style.display = 'none';
+  btn.disabled = true;
+  currentStreamingMessage = messageElement;
+  streamingContent = assistantMessage.content;
+  streamingThought = assistantMessage.thought || '';
+  const responseActions = messageElement.querySelector('.response-actions');
+  if (responseActions) {
+    responseActions.remove();
+  }
+  textElement.id = 'streaming-text';
+  const cursor = document.createElement('span');
+  cursor.className = 'streaming-cursor';
+  textElement.appendChild(cursor);
+  console.log('[Continue] Calling continueGeneration with existing content');
+  continueGenerationFromMessage();
+}
+async function continueGenerationFromMessage() {
+  console.log('[Continue] Continuing generation from existing message');
+  try {
+    const partialResponse = streamingContent;
+    const lastAssistantIndex = currentChat.length - 1;
+    if (lastAssistantIndex >= 0 && currentChat[lastAssistantIndex].role === 'assistant') {
+      currentChat[lastAssistantIndex].content = partialResponse;
+    }
+    const lastUserIndex = currentChat.findLastIndex(m => m.role === 'user');
+    const originalUserMessage = lastUserIndex >= 0 ? currentChat[lastUserIndex].content : '';
+    let messagesToSend = [];
+    const messagesBeforePartial = currentChat.slice(0, -1);
+    if (memoryEnabled && messagesBeforePartial.length > 0) {
+      messagesToSend = [...messagesBeforePartial];
+    } else {
+      if (lastUserIndex >= 0) {
+        messagesToSend = [messagesBeforePartial[lastUserIndex]];
+      }
+    }
+    messagesToSend.push({
+      role: 'user',
+      content: `Original request: "${originalUserMessage}"\n\nYou started responding with:\n${partialResponse}\n\nContinue your response from the exact point where you stopped. Do not repeat anything, just continue seamlessly.`
+    });
+    console.log('[Continue] Sending continuation with history, messages:', messagesToSend.length);
+    console.log('[Continue] Partial response length:', partialResponse.length);
+    abortController = new AbortController();
+    const response = await fetch('ollama_api.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'chat_stream',
+        model: currentModel,
+        messages: messagesToSend,
+        useMemory: false  // Don't use internal memory, we're providing full context
+      }),
+      signal: abortController.signal
+    });
+    if (!response.ok) {
+      let bodyText = '';
+      try {
+        bodyText = await response.text();
+      } catch (e) {
+        bodyText = `HTTP ${response.status} ${response.statusText}`;
+      }
+      throw new Error(`HTTP ${response.status}: ${bodyText}`);
+    }
+    if (!response.body) {
+      throw new Error('No response body from server');
+    }
+    streamReader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    while (true) {
+      if (isStreamStopped) {
+        console.log('[Continue] Stream stopped by user');
+        break;
+      }
+      const { done, value } = await streamReader.read();
+      if (done) {
+        console.log('[Continue] Stream ended');
+        break;
+      }
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+      for (const rawLine of lines) {
+        const line = rawLine.trim();
+        if (!line) continue;
+        let payload = null;
+        if (line.startsWith('data:')) {
+          const data = line.slice(5).trim();
+          if (data === '[DONE]' || data === ' [DONE]') {
+            console.log('[Continue] Received [DONE] signal');
+            finishContinuedMessage();
+            return;
+          }
+          try {
+            payload = JSON.parse(data);
+          } catch (err) {
+            console.warn('[Continue] Non-JSON chunk:', data);
+            continue;
+          }
+        } else {
+          try {
+            payload = JSON.parse(line);
+          } catch (err) {
+            continue;
+          }
+        }
+        if (!payload) continue;
+        if (payload.error) {
+          throw new Error(payload.error);
+        }
+        if (payload.content) {
+          appendToStreamingMessage(payload.content);
+          scrollToBottomIfNeeded();
+        }
+      }
+    }
+    finishContinuedMessage();
+  } catch (error) {
+    console.error('[Continue] Error:', error);
+    if (error.name === 'AbortError') {
+      console.log('[Continue] Request was aborted by user');
+      finishContinuedMessage();
+    } else {
+      showAlert('Continue Error', error.message || 'Failed to continue generation', 'error');
+      const cursor = currentStreamingMessage?.querySelector('.streaming-cursor');
+      if (cursor) cursor.remove();
+      if (currentStreamingMessage) {
+        const failedMessage = currentStreamingMessage; // Capture reference
+        const messageContent = failedMessage.querySelector('.message-content');
+        const responseActions = document.createElement('div');
+        responseActions.className = 'response-actions';
+        responseActions.innerHTML = `
+          <button class="response-action-btn" data-action="regenerate" title="Regenerate response">
+            <i class="fas fa-sync-alt"></i> Regenerate
+          </button>
+          <button class="response-action-btn" data-action="continue" title="Continue response">
+            <i class="fas fa-arrow-right"></i> Continue
+          </button>
+        `;
+        responseActions.querySelector('[data-action="regenerate"]').addEventListener('click', () => {
+          regenerateResponse(failedMessage);
+        });
+        responseActions.querySelector('[data-action="continue"]').addEventListener('click', () => {
+          continueResponse(failedMessage);
+        });
+        messageContent.appendChild(responseActions);
+      }
+      isTyping = false;
+      setChatEnabled(!!currentModel);
+      stopBtn.style.display = 'none';
+      btn.style.display = 'flex';
+    }
+  } finally {
+    streamReader = null;
+    abortController = null;
+  }
+}
+function finishContinuedMessage() {
+  if (!currentStreamingMessage) return;
+  console.log('[Continue] Finishing continued message');
+  isTyping = false;
+  setChatEnabled(!!currentModel);
+  stopBtn.style.display = 'none';
+  btn.style.display = 'flex';
+  continueBtn.style.display = 'none';
+  const textElement = currentStreamingMessage.querySelector('.text');
+  const cursor = textElement?.querySelector('.streaming-cursor');
+  if (cursor) cursor.remove();
+  if (textElement) {
+    textElement.removeAttribute('id');
+  }
+  const codeBlockCount = (streamingContent.match(/```/g) || []).length;
+  if (codeBlockCount % 2 !== 0) {
+    streamingContent += '\n```';
+  }
+  const parsed = parseMarkdown(streamingContent);
+  if (textElement) {
+    textElement.innerHTML = parsed.content;
+  }
+  const messages = Array.from(msgs.querySelectorAll('.message'));
+  const messageIndex = messages.indexOf(currentStreamingMessage);
+  if (messageIndex !== -1 && messageIndex < currentChat.length) {
+    currentChat[messageIndex].content = streamingContent;
+    currentChat[messageIndex].wasStopped = isStreamStopped; // Update stopped status
+    console.log('[Continue] Updated currentChat at index:', messageIndex, 'wasStopped:', isStreamStopped);
+  }
+  addCodeBlockHandlers(currentStreamingMessage);
+  const finalizedMessage = currentStreamingMessage;
+  const messageContent = finalizedMessage.querySelector('.message-content');
+  const responseActions = document.createElement('div');
+  responseActions.className = 'response-actions';
+  if (isStreamStopped) {
+    responseActions.innerHTML = `
+      <button class="response-action-btn" data-action="regenerate" title="Regenerate response">
+        <i class="fas fa-sync-alt"></i> Regenerate
+      </button>
+      <button class="response-action-btn" data-action="continue" title="Continue response">
+        <i class="fas fa-arrow-right"></i> Continue
+      </button>
+    `;
+    responseActions.querySelector('[data-action="continue"]').addEventListener('click', () => {
+      continueResponse(finalizedMessage);
+    });
+  } else {
+    responseActions.innerHTML = `
+      <button class="response-action-btn" data-action="regenerate" title="Regenerate response">
+        <i class="fas fa-sync-alt"></i> Regenerate
+      </button>
+    `;
+  }
+  responseActions.querySelector('[data-action="regenerate"]').addEventListener('click', () => {
+    regenerateResponse(finalizedMessage);
+  });
+  messageContent.appendChild(responseActions);
+  updateChatInHistory();
+  currentStreamingMessage = null;
+  streamingContent = '';
+  streamingThought = '';
+}
 function addCodeBlockHandlers(messageElement) {
   messageElement.querySelectorAll('.code-btn').forEach(btn => {
+    btn.disabled = false;
     btn.addEventListener('click', async function() {
       const action = this.dataset.action;
       const container = this.closest('.code-container');
@@ -987,12 +1827,11 @@ function addCodeBlockHandlers(messageElement) {
       } else if (action === 'run') {
         await runCode(code, language, container);
       } else if (action === 'preview') {
-        showPreview(code, language);
+        showPreview(code, language, this);
       }
     });
   });
 }
-
 async function runCode(code, language, container) {
   const runBtn = container.querySelector('[data-action="run"]');
   const originalText = runBtn.innerHTML;
@@ -1005,7 +1844,7 @@ async function runCode(code, language, container) {
     container.appendChild(outputEl);
   }
   try {
-    let endpoint = 'python_runner.php';
+    let endpoint = 'python_runner';
     if (language === 'javascript' || language === 'js') {
       try {
         const originalLog = console.log;
@@ -1044,11 +1883,12 @@ async function runCode(code, language, container) {
     runBtn.disabled = false;
   }
 }
-
-function showPreview(code, language) {
+function showPreview(code, language, sourceElement) {
   const previewWindow = document.getElementById('previewWindow');
-  previewWindow.style.display = 'block';
+  if (!previewWindow) return;
+  previewWindow.style.display = 'flex';
   const previewContent = document.getElementById('previewContent');
+  if (!previewContent) return;
   previewContent.innerHTML = `
     <div style="display: flex; justify-content: center; align-items: center; height: 100%; background: white;">
       <div style="text-align: center;">
@@ -1057,11 +1897,23 @@ function showPreview(code, language) {
       </div>
     </div>
   `;
-  if (language.toLowerCase() === 'html' || language.toLowerCase() === 'css' || language.toLowerCase() === 'javascript' || language.toLowerCase() === 'js') {
-    const currentCodeContainer = event.target.closest('.code-container');
-    if (!currentCodeContainer) return;
-    const currentMessageContainer = currentCodeContainer.closest('.message');
-    if (!currentMessageContainer) return;
+  const currentCodeContainer = sourceElement ? sourceElement.closest('.code-container') : null;
+  if (['html', 'css', 'javascript', 'js'].includes(language.toLowerCase())) {
+    if (!currentCodeContainer) {
+      fetch('preview.php', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ code, language })
+      })
+      .then(response => response.text())
+      .then(html => {
+        previewContent.innerHTML = `<iframe id="previewFrame" class="preview-iframe" sandbox="allow-scripts" srcdoc="${escapeHtml(html)}"></iframe>`;
+      })
+      .catch(error => {
+        previewContent.innerHTML = `<div style="padding: 20px; color: #dc3545;">Error loading preview: ${error.message}</div>`;
+      });
+      return;
+    }
     let htmlBlocks = [];
     let cssBlocks = [];
     let jsBlocks = [];
@@ -1077,7 +1929,7 @@ function showPreview(code, language) {
         jsBlocks.push(code);
         break;
     }
-    const codeContainers = currentMessageContainer.querySelectorAll('.code-container');
+    const codeContainers = currentCodeContainer.closest('.message')?.querySelectorAll('.code-container') || [];
     codeContainers.forEach(container => {
       if (container === currentCodeContainer) return;
       const lang = container.querySelector('.code-lang')?.textContent?.toLowerCase();
@@ -1108,7 +1960,7 @@ function showPreview(code, language) {
           ${jsBlocks.length > 0 ? `<span class="preview-tag">JS (${jsBlocks.length})</span>` : ''}
         `;
       }
-      fetch('preview.php', {
+      fetch('preview', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({
@@ -1145,7 +1997,6 @@ function showPreview(code, language) {
     previewContent.innerHTML = `<div style="padding: 20px; color: #dc3545;">Error loading preview: ${error.message}</div>`;
   });
 }
-
 function escapeHtml(html) {
   return html
     .replace(/&/g, '&amp;')
@@ -1154,14 +2005,12 @@ function escapeHtml(html) {
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
 }
-
 function closePreview() {
   const previewWindow = document.getElementById('previewWindow');
   if (previewWindow) {
     previewWindow.style.display = 'none';
   }
 }
-
 function makePreviewWindowDraggable() {
   const previewWindow = document.getElementById('previewWindow');
   const previewHeader = previewWindow.querySelector('.preview-header');
@@ -1225,18 +2074,18 @@ function makePreviewWindowDraggable() {
     }
   });
 }
-
 const previewWindow = document.getElementById('previewWindow');
 const maximizePreviewBtn = document.getElementById('maximizePreview');
-maximizePreviewBtn.addEventListener('click', () => {
-  previewWindow.classList.toggle('maximized');
-  if (previewWindow.classList.contains('maximized')) {
-    maximizePreviewBtn.innerHTML = '<i class="fas fa-compress"></i>';
-  } else {
-    maximizePreviewBtn.innerHTML = '<i class="fas fa-expand"></i>';
-  }
-});
-
+if (previewWindow && maximizePreviewBtn) {
+  maximizePreviewBtn.addEventListener('click', () => {
+    previewWindow.classList.toggle('maximized');
+    if (previewWindow.classList.contains('maximized')) {
+      maximizePreviewBtn.innerHTML = '<i class="fas fa-compress"></i>';
+    } else {
+      maximizePreviewBtn.innerHTML = '<i class="fas fa-expand"></i>';
+    }
+  });
+}
 function initPreviewWindowResize() {
   const handles = previewWindow.querySelectorAll('.resize-handle');
   handles.forEach(handle => {
@@ -1289,58 +2138,86 @@ function initPreviewWindowResize() {
     document.addEventListener('mouseup', stopResize);
   }
 }
-
 function initPreviewWindow() {
   makePreviewWindowDraggable();
   initPreviewWindowResize();
 }
-
 initPreviewWindow();
-
 function saveChatToHistory() {
-  if (currentChat.length === 0) return;
+  if (currentChat.length === 0) {
+    console.log('[History] Cannot save - no messages in current chat');
+    return;
+  }
+  if (!currentChatId) {
+    currentChatId = generateChatId();
+    setChatIdInUrl(currentChatId);
+    console.log('[History] Generated new chat ID:', currentChatId);
+  }
   const chatSummary = currentChat[0]?.content?.substring(0, 50) + '...';
   const chatData = {
-    id: currentChatId || Date.now(),
+    id: currentChatId,
     title: chatSummary,
     messages: [...currentChat],
     model: currentModel,
     timestamp: new Date().toISOString()
   };
+  console.log('[History] Saving chat:', chatData.id, chatData.title);
   const existingIndex = chatHistory.findIndex(chat => chat.id === chatData.id);
   if (existingIndex !== -1) {
     chatHistory[existingIndex] = chatData;
+    console.log('[History] Updated existing chat at index:', existingIndex);
   } else {
     chatHistory.unshift(chatData);
+    console.log('[History] Added new chat, total chats:', chatHistory.length);
     if (chatHistory.length > 50) {
       chatHistory = chatHistory.slice(0, 50);
     }
   }
-  localStorage.setItem('ollama_chat_history', JSON.stringify(chatHistory));
+  try {
+    localStorage.setItem('ollama_chat_history', JSON.stringify(chatHistory));
+    console.log('[History] Saved to localStorage successfully');
+  } catch (error) {
+    console.error('[History] Failed to save to localStorage:', error);
+  }
   updateChatHistoryUI();
 }
-
 function updateChatInHistory() {
-  if (!currentChatId || currentChat.length ===  0) return;
+  if (!currentChatId || currentChat.length === 0) {
+    console.log('[History] Cannot update - no chat ID or empty chat');
+    return;
+  }
   const existingIndex = chatHistory.findIndex(chat => chat.id === currentChatId);
   if (existingIndex !== -1) {
     chatHistory[existingIndex].messages = [...currentChat];
     chatHistory[existingIndex].timestamp = new Date().toISOString();
-    localStorage.setItem('ollama_chat_history', JSON.stringify(chatHistory));
+    console.log('[History] Updated chat:', currentChatId, 'Messages:', currentChat.length);
+    try {
+      localStorage.setItem('ollama_chat_history', JSON.stringify(chatHistory));
+      console.log('[History] Updated in localStorage successfully');
+    } catch (error) {
+      console.error('[History] Failed to update localStorage:', error);
+    }
     updateChatHistoryUI();
   } else {
+    console.log('[History] Chat not found in history, saving as new');
     saveChatToHistory();
   }
 }
-
 function deleteChatFromHistory(chatId) {
-  if (confirm('Are you sure you want to delete this chat?')) {
-    chatHistory = chatHistory.filter(chat => chat.id !== chatId);
-    localStorage.setItem('ollama_chat_history', JSON.stringify(chatHistory));
-    updateChatHistoryUI();
-  }
+  showModal(
+    'Delete Chat',
+    'Are you sure you want to delete this chat? This action cannot be undone.',
+    'warning',
+    'Delete',
+    'Cancel'
+  ).then(confirmed => {
+    if (confirmed) {
+      chatHistory = chatHistory.filter(chat => chat.id !== chatId);
+      localStorage.setItem('ollama_chat_history', JSON.stringify(chatHistory));
+      updateChatHistoryUI();
+    }
+  });
 }
-
 function exportSpecificChat(chat) {
   const chatText = chat.messages.map(msg =>
     `${msg.role.toUpperCase()}: ${msg.content}${msg.thought ? '\n\nTHOUGHT:\n' + msg.thought : ''}`
@@ -1353,40 +2230,66 @@ function exportSpecificChat(chat) {
   a.click();
   URL.revokeObjectURL(url);
 }
-
 function loadChatHistory() {
+  console.log('[History] Loading chat history, count:', chatHistory.length);
   updateChatHistoryUI();
 }
-
 function updateChatHistoryUI() {
-  const chatHistoryContainer = document.getElementById('chatHistory');
-  chatHistoryContainer.innerHTML = '';
-  if (chatHistory.length === 0) {
-    chatHistoryContainer.innerHTML = '<p style="text-align: center; color: var(--text-secondary); padding: 20px;">No chat history yet</p>';
+  console.log('[History] Updating UI with', chatHistory.length, 'chats');
+  const chatHistoryContainer = document.getElementById('chatHistoryList');
+  if (!chatHistoryContainer) {
+    console.error('[History] chatHistoryList element not found!');
     return;
   }
+  chatHistoryContainer.innerHTML = '';
+  if (chatHistory.length === 0) {
+    chatHistoryContainer.innerHTML = '<div class="empty-history"><i class="fas fa-comments" style="font-size: 48px; margin-bottom: 16px; opacity: 0.3;"></i><p style="text-align: center; color: var(--text-secondary);">No chat history yet</p></div>';
+    console.log('[History] No chats to display');
+    return;
+  }
+  console.log('[History] Rendering', chatHistory.length, 'chat items');
   chatHistory.forEach(chat => {
     const chatItem = document.createElement('div');
     chatItem.className = 'chat-history-item';
-    chatItem.innerHTML = `
-      <div class="chat-history-item-header">
-        <div style="font-weight: 600; font-size: 14px; margin-bottom: 4px;">${chat.title}</div>
-        <div class="chat-history-actions">
-          <button class="chat-history-action-btn" onclick="exportSpecificChat(${escape(JSON.stringify(chat))})" title="Export">
-            <i class="fas fa-download"></i>
-          </button>
-          <button class="chat-history-action-btn" onclick="deleteChatFromHistory(${chat.id})" title="Delete">
-            <i class="fas fa-trash"></i>
-          </button>
-        </div>
-      </div>
-      <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 4px;">
-        ${chat.model} • ${new Date(chat.timestamp).toLocaleDateString()}
-      </div>
-      <div style="font-size: 12px; color: var(--text-secondary);">
-        ${chat.messages.length} messages
-      </div>
-    `;
+    if (currentChatId === chat.id) {
+      chatItem.classList.add('active');
+    }
+    const chatTitle = document.createElement('div');
+    chatTitle.className = 'chat-history-item-header';
+    const titleText = document.createElement('div');
+    titleText.style.cssText = 'font-weight: 600; font-size: 14px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;';
+    titleText.textContent = chat.title;
+    const actionsDiv = document.createElement('div');
+    actionsDiv.className = 'chat-history-actions';
+    const exportBtn = document.createElement('button');
+    exportBtn.className = 'chat-history-action-btn';
+    exportBtn.title = 'Export';
+    exportBtn.innerHTML = '<i class="fas fa-download"></i>';
+    exportBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      exportSpecificChat(chat);
+    });
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'chat-history-action-btn';
+    deleteBtn.title = 'Delete';
+    deleteBtn.innerHTML = '<i class="fas fa-trash"></i>';
+    deleteBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      deleteChatFromHistory(chat.id);
+    });
+    actionsDiv.appendChild(exportBtn);
+    actionsDiv.appendChild(deleteBtn);
+    chatTitle.appendChild(titleText);
+    chatTitle.appendChild(actionsDiv);
+    const metaInfo = document.createElement('div');
+    metaInfo.style.cssText = 'font-size: 12px; color: var(--text-secondary); margin-bottom: 4px;';
+    metaInfo.innerHTML = `<i class="fas fa-robot"></i> ${chat.model} • <i class="fas fa-clock"></i> ${new Date(chat.timestamp).toLocaleDateString()}`;
+    const messageCount = document.createElement('div');
+    messageCount.style.cssText = 'font-size: 12px; color: var(--text-secondary);';
+    messageCount.innerHTML = `<i class="fas fa-comment"></i> ${chat.messages.length} messages`;
+    chatItem.appendChild(chatTitle);
+    chatItem.appendChild(metaInfo);
+    chatItem.appendChild(messageCount);
     chatItem.addEventListener('click', (e) => {
       if (!e.target.closest('.chat-history-action-btn')) {
         loadChatFromHistory(chat);
@@ -1395,53 +2298,84 @@ function updateChatHistoryUI() {
     chatHistoryContainer.appendChild(chatItem);
   });
 }
-
 function loadChatFromHistory(chat) {
   msgs.innerHTML = '';
   currentChat = [...chat.messages];
   currentChatId = chat.id;
   currentModel = chat.model;
+  setChatIdInUrl(chat.id);
   modelSel.value = chat.model;
+  if (modelSel.value !== chat.model) {
+    const option = document.createElement('option');
+    option.value = chat.model;
+    option.textContent = chat.model;
+    modelSel.insertBefore(option, modelSel.firstChild);
+    modelSel.value = chat.model;
+  }
   setChatEnabled(!!currentModel);
   if (currentModel) {
     inp.placeholder = `Chat with ${currentModel}...`;
   }
   chat.messages.forEach(msg => {
-    // When loading, pass the thought if it exists
-    appendMessage(msg.role, msg.content, msg.thought);
+    appendMessage(msg.role, msg.content, msg.thought, msg.role === 'assistant' ? chat.model : null, msg.wasStopped);
   });
   toggleSidebar();
 }
-
 function newChat() {
-  if (currentChat.length > 0 && confirm('Start a new chat? Current conversation will be saved to history.')) {
-    clearChat();
-  } else if (currentChat.length === 0) {
+  console.log('[Chat] New chat requested, current messages:', currentChat.length);
+  if (currentChat.length > 0) {
+    showModal(
+      'Start New Chat',
+      'Start a new chat? Your current conversation will be saved to history.',
+      'question',
+      'Start New',
+      'Cancel'
+    ).then(confirmed => {
+      if (confirmed) {
+        console.log('[Chat] User confirmed new chat');
+        clearChat();
+      } else {
+        console.log('[Chat] User cancelled new chat');
+      }
+    });
+  } else {
+    console.log('[Chat] Starting new chat (no existing messages)');
     clearChat();
   }
 }
-
 function clearChat() {
+  console.log('[Chat] Clearing chat');
   msgs.innerHTML = '';
   currentChat = [];
-  currentChatId = null;
-  setChatEnabled(!!currentModel);
+  currentChatId = generateChatId();
+  setChatIdInUrl(currentChatId);
+  updateChatHistoryUI();
+  autoScroll = true;
+  scrollToBottomBtn.classList.remove('show');
+  const hasText = inp.value.trim().length > 0;
+  btn.disabled = !currentModel || !hasText || isTyping;
+  console.log('[Chat] Chat cleared, new currentChatId:', currentChatId);
 }
-
 function clearAllChatHistory() {
-  if (confirm('Are you sure you want to delete all chat history? This cannot be undone.')) {
-    chatHistory = [];
-    localStorage.removeItem('ollama_chat_history');
-    updateChatHistoryUI();
-  }
+  showModal(
+    'Clear All History',
+    'Are you sure you want to delete all chat history? This action cannot be undone.',
+    'warning',
+    'Delete All',
+    'Cancel'
+  ).then(confirmed => {
+    if (confirmed) {
+      chatHistory = [];
+      localStorage.removeItem('ollama_chat_history');
+      updateChatHistoryUI();
+    }
+  });
 }
-
 function exportChat() {
   if (currentChat.length === 0) {
-    alert('No conversation to export');
+    showAlert('No Content', 'There is no conversation to export.', 'info');
     return;
   }
-  // Include thought in the export for the current chat
   const chatText = currentChat.map(msg =>
     `${msg.role.toUpperCase()}: ${msg.content}${msg.thought ? '\n\nTHOUGHT:\n' + msg.thought : ''}`
   ).join('\n\n---\n\n');
@@ -1453,17 +2387,33 @@ function exportChat() {
   a.click();
   URL.revokeObjectURL(url);
 }
-
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
   });
 }
-
+(function initializeFromUrl() {
+  const chatIdFromUrl = getChatIdFromUrl();
+  if (chatIdFromUrl) {
+    console.log('[Init] Chat ID found in URL:', chatIdFromUrl);
+    const chat = chatHistory.find(c => String(c.id) === String(chatIdFromUrl));
+    if (chat) {
+      console.log('[Init] Loading chat from history:', chat.id);
+      loadChatFromHistory(chat);
+    } else {
+      console.log('[Init] Chat ID not found in history, starting fresh with this ID');
+      currentChatId = chatIdFromUrl;
+    }
+  } else {
+    console.log('[Init] No chat ID in URL, generating new one');
+    currentChatId = generateChatId();
+    setChatIdInUrl(currentChatId);
+  }
+})();
 window.addEventListener('message', function(event) {
   if (event.data && event.data.action === "bypassSecurity") {
     const previewData = event.data;
     if (previewData.isCombinedPreview) {
-      fetch('preview.php', {
+      fetch('preview', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({
@@ -1484,7 +2434,7 @@ window.addEventListener('message', function(event) {
         previewContent.innerHTML = `<div style="padding: 20px; color: #dc3545;">Error loading preview: ${error.message}</div>`;
       });
     } else {
-      fetch('preview.php', {
+      fetch('preview', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({
